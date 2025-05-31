@@ -57,5 +57,5 @@ An AWS-based web application for automated bird species identification and file 
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/your-username/bird-tagging-system.git
-   cd bird-tagging-system
+   git clone https://github.com/DannyLRF/bird_detection.git
+   cd bird_detection
