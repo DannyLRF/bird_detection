@@ -1,97 +1,302 @@
-// Main application functionality
+// js/app.js - Main Application Logic
 
-// Show/hide loading overlay
-function showLoading() {
-    document.getElementById('loading').style.display = 'flex';
-}
-
-function hideLoading() {
-    document.getElementById('loading').style.display = 'none';
-}
-
-// Show specific section
+// Show different sections
 function showSection(sectionName) {
     // Hide all sections
     const sections = document.querySelectorAll('.section');
-    sections.forEach(section => {
-        section.style.display = 'none';
-    });
+    sections.forEach(s => s.style.display = 'none');
     
-    // Show selected section
-    const targetSection = document.getElementById(sectionName + 'Section');
-    if (targetSection) {
-        targetSection.style.display = 'block';
-    }
+    // Show specified section
+    document.getElementById(sectionName + 'Section').style.display = 'block';
     
-    // Update navigation active state
-    const navLinks = document.querySelectorAll('.nav-link');
-    navLinks.forEach(link => {
+    // Update navigation state
+    document.querySelectorAll('.nav-link').forEach(link => {
         link.classList.remove('active');
     });
     
-    // Find and activate the corresponding nav link
+    // Find and activate the correct nav link
     const activeLink = document.querySelector(`[onclick="showSection('${sectionName}')"]`);
     if (activeLink) {
         activeLink.classList.add('active');
     }
 }
 
-// Toast notification system
-function showToast(message, type = 'info') {
-    const toast = document.getElementById('toast');
-    toast.textContent = message;
-    toast.className = `toast ${type}`;
-    toast.classList.add('show');
+// File upload handling
+document.getElementById('fileInput').addEventListener('change', function(e) {
+    const files = e.target.files;
+    if (files.length === 0) return;
     
-    setTimeout(() => {
-        toast.classList.remove('show');
-    }, TOAST_DURATION);
+    uploadFiles(files);
+});
+
+// Drag and drop functionality
+const uploadArea = document.querySelector('.upload-area');
+
+uploadArea.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    uploadArea.classList.add('dragover');
+});
+
+uploadArea.addEventListener('dragleave', function(e) {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+});
+
+uploadArea.addEventListener('drop', function(e) {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        uploadFiles(files);
+    }
+});
+
+// Upload files function
+async function uploadFiles(files) {
+    const resultsDiv = document.getElementById('uploadResults');
+    const progressDiv = document.getElementById('uploadProgress');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    
+    // Show progress
+    progressDiv.style.display = 'block';
+    resultsDiv.innerHTML = '';
+    
+    try {
+        let uploadedCount = 0;
+        let html = '<h3>Upload Results:</h3>';
+        
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            
+            // Update progress
+            const progress = (i / files.length) * 100;
+            progressBar.style.width = progress + '%';
+            progressText.textContent = `Processing ${file.name}...`;
+            
+            if (ALL_SUPPORTED_TYPES.includes(file.type)) {
+                // Simulate upload and processing
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                const mockResult = await simulateFileProcessing(file);
+                
+                html += `
+                    <div class="upload-result-item">
+                        <div class="file-info">
+                            <i class="fas ${getFileIcon(file.type)}"></i>
+                            <div class="file-details">
+                                <h4>${file.name}</h4>
+                                <p>Size: ${formatFileSize(file.size)}</p>
+                                <p>Type: ${file.type}</p>
+                                <div class="upload-result-tags">
+                                    ${mockResult.tags.map(tag => 
+                                        `<span class="tag">${tag.species} (${(tag.confidence * 100).toFixed(1)}%)</span>`
+                                    ).join('')}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="upload-result-actions">
+                            <button class="btn btn-small" onclick="viewFile('${mockResult.url}')">
+                                <i class="fas fa-eye"></i> View
+                            </button>
+                            <button class="btn btn-small" onclick="shareFile('${mockResult.url}')">
+                                <i class="fas fa-share"></i> Share
+                            </button>
+                        </div>
+                    </div>
+                `;
+                uploadedCount++;
+            } else {
+                html += `
+                    <div class="upload-result-item error">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span>${file.name} - Unsupported file type</span>
+                    </div>
+                `;
+            }
+        }
+        
+        // Complete progress
+        progressBar.style.width = '100%';
+        progressText.textContent = 'Upload complete!';
+        
+        setTimeout(() => {
+            progressDiv.style.display = 'none';
+        }, 2000);
+        
+        resultsDiv.innerHTML = html;
+        
+        if (uploadedCount > 0) {
+            showToast(`Successfully uploaded ${uploadedCount} file(s)!`, 'success');
+        }
+        
+    } catch (error) {
+        console.error('Upload error:', error);
+        progressDiv.style.display = 'none';
+        showToast('Upload failed: ' + error.message, 'error');
+    }
 }
 
-// Bulk tag operations
-function addBulkTagInput() {
-    const container = document.getElementById('bulkTagInputs');
-    const newInput = document.createElement('div');
-    newInput.className = 'bulk-tag-input';
+// Simulate file processing (for demo purposes)
+async function simulateFileProcessing(file) {
+    // Mock AI detection results
+    const mockSpecies = ['Crow', 'Pigeon', 'Sparrow', 'Robin', 'Eagle', 'Owl'];
+    const randomSpecies = mockSpecies[Math.floor(Math.random() * mockSpecies.length)];
     
-    newInput.innerHTML = `
-        <input type="text" placeholder="crow,3" class="bulk-tag">
-        <button type="button" onclick="removeBulkTagInput(this)" class="btn btn-small btn-danger">
-            <i class="fas fa-minus"></i>
-        </button>
+    return {
+        url: URL.createObjectURL(file),
+        thumbnailUrl: URL.createObjectURL(file),
+        tags: [
+            {
+                species: randomSpecies,
+                confidence: 0.85 + Math.random() * 0.15,
+                count: Math.floor(Math.random() * 3) + 1
+            }
+        ]
+    };
+}
+
+// Search functionality
+async function searchFiles() {
+    const query = document.getElementById('searchInput').value.trim();
+    if (!query) {
+        showToast('Please enter a search term', 'warning');
+        return;
+    }
+    
+    const resultsDiv = document.getElementById('searchResults');
+    resultsDiv.innerHTML = '<div class="searching"><i class="fas fa-spinner fa-spin"></i> Searching...</div>';
+    
+    try {
+        // Simulate search delay
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        // Mock search results
+        const mockResults = generateMockSearchResults(query);
+        
+        displaySearchResults(mockResults, query);
+        
+    } catch (error) {
+        console.error('Search error:', error);
+        showToast('Search failed: ' + error.message, 'error');
+    }
+}
+
+// Advanced search
+async function advancedSearch() {
+    const fileType = document.getElementById('fileTypeFilter').value;
+    const confidence = document.getElementById('confidenceFilter').value;
+    
+    const resultsDiv = document.getElementById('searchResults');
+    resultsDiv.innerHTML = '<div class="searching"><i class="fas fa-spinner fa-spin"></i> Filtering...</div>';
+    
+    try {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        const mockResults = generateMockSearchResults('', fileType, confidence);
+        displaySearchResults(mockResults, 'Advanced Filter');
+        
+    } catch (error) {
+        console.error('Search error:', error);
+        showToast('Search failed: ' + error.message, 'error');
+    }
+}
+
+// Generate mock search results
+function generateMockSearchResults(query, fileType = '', confidence = '') {
+    const mockFiles = [
+        { name: 'crow_photo_1.jpg', species: 'Crow', confidence: 0.95, type: 'image' },
+        { name: 'pigeon_video.mp4', species: 'Pigeon', confidence: 0.87, type: 'video' },
+        { name: 'sparrow_audio.wav', species: 'Sparrow', confidence: 0.92, type: 'audio' },
+        { name: 'robin_nest.jpg', species: 'Robin', confidence: 0.78, type: 'image' },
+        { name: 'eagle_flight.mp4', species: 'Eagle', confidence: 0.89, type: 'video' },
+        { name: 'owl_hoot.wav', species: 'Owl', confidence: 0.94, type: 'audio' }
+    ];
+    
+    let results = mockFiles;
+    
+    // Filter by query
+    if (query) {
+        results = results.filter(item => 
+            item.species.toLowerCase().includes(query.toLowerCase()) ||
+            item.name.toLowerCase().includes(query.toLowerCase())
+        );
+    }
+    
+    // Filter by file type
+    if (fileType) {
+        results = results.filter(item => item.type === fileType);
+    }
+    
+    // Filter by confidence
+    if (confidence) {
+        const minConfidence = parseFloat(confidence);
+        results = results.filter(item => item.confidence >= minConfidence);
+    }
+    
+    return results;
+}
+
+// Display search results
+function displaySearchResults(results, searchTerm) {
+    const resultsDiv = document.getElementById('searchResults');
+    
+    if (results.length === 0) {
+        resultsDiv.innerHTML = `
+            <div class="no-results">
+                <i class="fas fa-search"></i>
+                <h3>No results found</h3>
+                <p>No files found matching "${searchTerm}"</p>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = `
+        <div class="results-header">
+            <h3>Search Results</h3>
+            <p>Found ${results.length} file(s) matching "${searchTerm}"</p>
+        </div>
+        <div class="results-grid">
     `;
     
-    container.appendChild(newInput);
-}
-
-function removeBulkTagInput(button) {
-    const inputGroup = button.closest('.bulk-tag-input');
-    inputGroup.remove();
-}
-
-// Handle bulk tag operations
-async function handleBulkTagOperation(event) {
-    event.preventDefault();
-    
-    const urls = document.getElementById('bulkUrls').value
-        .split('\n')
-        .map(url => url.trim())
-        .filter(url => url);
-    
-    const operation = document.getElementById('operation').value;
-    
-    const tagInputs = document.querySelectorAll('.bulk-tag');
-    const tags = [];
-    
-    tagInputs.forEach(input => {
-        const value = input.value.trim();
-        if (value) {
-            tags.push(value);
-        }
+    results.forEach(result => {
+        html += `
+            <div class="result-item">
+                <div class="file-placeholder">
+                    <i class="fas ${getFileIcon(result.type)}"></i>
+                    <p>${result.name}</p>
+                </div>
+                <div class="result-item-info">
+                    <h4>${result.species}</h4>
+                    <p>Confidence: ${(result.confidence * 100).toFixed(1)}%</p>
+                    <p>Type: ${result.type}</p>
+                    <div class="result-actions">
+                        <button class="btn btn-small" onclick="viewFile('${result.name}')">
+                            <i class="fas fa-eye"></i> View
+                        </button>
+                        <button class="btn btn-small" onclick="downloadFile('${result.name}')">
+                            <i class="fas fa-download"></i> Download
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
     });
     
+    html += '</div>';
+    resultsDiv.innerHTML = html;
+}
+
+// Bulk tag management
+async function manageBulkTags() {
+    const urls = document.getElementById('bulkUrls').value.trim().split('\n').filter(url => url.trim());
+    const tags = document.getElementById('bulkTags').value.trim().split(',').map(tag => tag.trim()).filter(tag => tag);
+    const operation = document.getElementById('bulkOperation').value;
+    
     if (urls.length === 0) {
-        showToast('Please enter at least one URL', 'warning');
+        showToast('Please enter at least one file URL', 'warning');
         return;
     }
     
@@ -101,274 +306,89 @@ async function handleBulkTagOperation(event) {
     }
     
     try {
-        showLoading();
+        showToast('Processing bulk tag operation...', 'info');
         
-        const token = await getCurrentUserToken();
-        const response = await fetch(`${AWS_CONFIG.apiGateway.baseUrl}${API_ENDPOINTS.manageTags}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                url: urls,
-                operation: parseInt(operation),
-                tags: tags
-            })
-        });
+        // Simulate processing
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        showToast(MESSAGES.tags.operationSuccess, 'success');
+        const operationText = operation === '1' ? 'added to' : 'removed from';
+        showToast(`Tags successfully ${operationText} ${urls.length} file(s)!`, 'success');
         
         // Clear form
         document.getElementById('bulkUrls').value = '';
-        document.querySelectorAll('.bulk-tag').forEach(input => input.value = '');
+        document.getElementById('bulkTags').value = '';
         
     } catch (error) {
-        console.error('Bulk tag operation error:', error);
-        showToast(MESSAGES.tags.operationFailed.replace('{error}', error.message), 'error');
-    } finally {
-        hideLoading();
+        console.error('Bulk tag error:', error);
+        showToast('Bulk tag operation failed: ' + error.message, 'error');
     }
 }
 
-// Handle file deletion
-async function handleDeleteFiles(event) {
-    event.preventDefault();
-    
-    const urls = document.getElementById('deleteUrls').value
-        .split('\n')
-        .map(url => url.trim())
-        .filter(url => url);
-    
-    if (urls.length === 0) {
-        showToast('Please enter at least one URL to delete', 'warning');
-        return;
+// Utility functions
+function getFileIcon(fileType) {
+    if (typeof fileType === 'string') {
+        if (fileType.startsWith('image/') || fileType === 'image') return 'fa-image';
+        if (fileType.startsWith('video/') || fileType === 'video') return 'fa-video';
+        if (fileType.startsWith('audio/') || fileType === 'audio') return 'fa-music';
     }
-    
-    if (!confirm(`Are you sure you want to delete ${urls.length} files? This action cannot be undone.`)) {
-        return;
-    }
-    
-    try {
-        showLoading();
-        
-        const token = await getCurrentUserToken();
-        const response = await fetch(`${AWS_CONFIG.apiGateway.baseUrl}${API_ENDPOINTS.deleteFiles}`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                urls: urls
-            })
+    return 'fa-file';
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function viewFile(url) {
+    window.open(url, '_blank');
+}
+
+function shareFile(url) {
+    if (navigator.share) {
+        navigator.share({
+            title: 'Bird Detection Result',
+            url: url
         });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        showToast(MESSAGES.tags.deleteSuccess, 'success');
-        
-        // Clear form
-        document.getElementById('deleteUrls').value = '';
-        
-    } catch (error) {
-        console.error('Delete files error:', error);
-        showToast(MESSAGES.tags.deleteFailed.replace('{error}', error.message), 'error');
-    } finally {
-        hideLoading();
-    }
-}
-
-// Notification management
-function addNotificationTag() {
-    const container = document.getElementById('notificationTags');
-    const newInput = document.createElement('div');
-    newInput.className = 'notification-tag-input';
-    
-    newInput.innerHTML = `
-        <input type="text" placeholder="Bird Species" class="notification-tag">
-        <button type="button" onclick="removeNotificationTag(this)" class="btn btn-small btn-danger">
-            <i class="fas fa-minus"></i>
-        </button>
-    `;
-    
-    container.appendChild(newInput);
-}
-
-function removeNotificationTag(button) {
-    const inputGroup = button.closest('.notification-tag-input');
-    inputGroup.remove();
-}
-
-// Handle notification subscription
-async function handleNotificationSubscription(event) {
-    event.preventDefault();
-    
-    const email = document.getElementById('notificationEmail').value.trim();
-    const tagInputs = document.querySelectorAll('.notification-tag');
-    const tags = [];
-    
-    tagInputs.forEach(input => {
-        const value = input.value.trim();
-        if (value) {
-            tags.push(value);
-        }
-    });
-    
-    if (!email) {
-        showToast('Please enter an email address', 'warning');
-        return;
-    }
-    
-    if (tags.length === 0) {
-        showToast('Please enter at least one bird species', 'warning');
-        return;
-    }
-    
-    try {
-        showLoading();
-        
-        const token = await getCurrentUserToken();
-        const response = await fetch(`${AWS_CONFIG.apiGateway.baseUrl}${API_ENDPOINTS.notifications}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                email: email,
-                tags: tags
-            })
+    } else {
+        // Fallback - copy to clipboard
+        navigator.clipboard.writeText(url).then(() => {
+            showToast('Link copied to clipboard!', 'success');
         });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        showToast(MESSAGES.notifications.subscribeSuccess, 'success');
-        
-        // Clear form
-        document.getElementById('notificationEmail').value = '';
-        document.querySelectorAll('.notification-tag').forEach(input => input.value = '');
-        
-        // Refresh subscription list
-        loadSubscriptions();
-        
-    } catch (error) {
-        console.error('Notification subscription error:', error);
-        showToast(MESSAGES.notifications.subscribeFailed.replace('{error}', error.message), 'error');
-    } finally {
-        hideLoading();
     }
 }
 
-// Load user subscriptions
-async function loadSubscriptions() {
-    try {
-        const token = await getCurrentUserToken();
-        const response = await fetch(`${AWS_CONFIG.apiGateway.baseUrl}${API_ENDPOINTS.notifications}`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const subscriptions = await response.json();
-        displaySubscriptions(subscriptions);
-        
-    } catch (error) {
-        console.error('Load subscriptions error:', error);
-    }
+function downloadFile(filename) {
+    showToast(`Downloading ${filename}...`, 'info');
 }
 
-// Display subscriptions
-function displaySubscriptions(subscriptions) {
-    const container = document.getElementById('subscriptionList');
+function showToast(message, type = 'info') {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = `toast ${type} show`;
     
-    if (!subscriptions || subscriptions.length === 0) {
-        container.innerHTML = '<p>No active subscriptions</p>';
-        return;
-    }
-    
-    container.innerHTML = subscriptions.map(subscription => `
-        <div class="subscription-item">
-            <div class="subscription-info">
-                <strong>${subscription.email}</strong>
-                <div class="subscription-tags">
-                    ${subscription.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}
-                </div>
-            </div>
-            <button onclick="unsubscribe('${subscription.id}')" class="btn btn-small btn-danger">
-                <i class="fas fa-trash"></i> Unsubscribe
-            </button>
-        </div>
-    `).join('');
+    setTimeout(() => {
+        toast.classList.remove('show');
+    }, 3000);
 }
 
-// Unsubscribe from notifications
-async function unsubscribe(subscriptionId) {
-    if (!confirm('Are you sure you want to unsubscribe?')) {
-        return;
-    }
-    
-    try {
-        showLoading();
-        
-        const token = await getCurrentUserToken();
-        const response = await fetch(`${AWS_CONFIG.apiGateway.baseUrl}${API_ENDPOINTS.notifications}/${subscriptionId}`, {
-            method: 'DELETE',
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        showToast(MESSAGES.notifications.unsubscribeSuccess, 'success');
-        loadSubscriptions(); // Refresh the list
-        
-    } catch (error) {
-        console.error('Unsubscribe error:', error);
-        showToast(MESSAGES.notifications.unsubscribeFailed.replace('{error}', error.message), 'error');
-    } finally {
-        hideLoading();
-    }
-}
-
-// Initialize application
+// Initialize drag and drop styling
 document.addEventListener('DOMContentLoaded', function() {
-    // Load subscriptions when notifications section is shown
-    const notificationsLink = document.querySelector('[onclick="showSection(\'notifications\')"]');
-    if (notificationsLink) {
-        notificationsLink.addEventListener('click', function() {
-            setTimeout(() => {
-                loadSubscriptions();
-            }, 100);
+    const uploadArea = document.querySelector('.upload-area');
+    
+    if (uploadArea) {
+        uploadArea.addEventListener('dragenter', function(e) {
+            e.preventDefault();
+            this.style.borderColor = '#667eea';
+            this.style.backgroundColor = '#f0f4ff';
+        });
+        
+        uploadArea.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            this.style.borderColor = '#ddd';
+            this.style.backgroundColor = 'white';
         });
     }
 });
-
-// Add active navigation style
-const style = document.createElement('style');
-style.textContent = `
-    .nav-link.active {
-        background: #667eea;
-        color: white !important;
-    }
-`;
-document.head.appendChild(style);

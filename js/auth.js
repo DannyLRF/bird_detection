@@ -1,261 +1,107 @@
-// Cognito configuration
-const poolData = {
-    UserPoolId: AWS_CONFIG.cognito.userPoolId,
-    ClientId: AWS_CONFIG.cognito.userPoolWebClientId
-};
+// js/auth.js - Simplified Authentication Logic
 
-const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
 let currentUser = null;
 
-// Check authentication state on page load
+// Check authentication status when page loads
 document.addEventListener('DOMContentLoaded', function() {
-    checkAuthState();
+    checkAuth();
+    handleCallback(); // Handle return from Cognito
 });
 
-// Check authentication state
-function checkAuthState() {
-    const cognitoUser = userPool.getCurrentUser();
+// Check login status
+function checkAuth() {
+    const token = getStoredToken();
     
-    if (cognitoUser != null) {
-        cognitoUser.getSession(function(err, session) {
-            if (err) {
-                console.log('Session error:', err);
-                showAuthSection();
-                return;
-            }
-            
-            if (session.isValid()) {
-                currentUser = cognitoUser;
-                setupAWSCredentials(session);
-                showMainApp();
-            } else {
-                showAuthSection();
-            }
-        });
+    if (token && isTokenValid(token)) {
+        setupUser(token);
+        showMainApp();
     } else {
-        showAuthSection();
+        showLoginRequired();
     }
 }
 
-// Setup AWS credentials
-function setupAWSCredentials(session) {
-    const idToken = session.getIdToken().getJwtToken();
+// Handle Cognito callback
+function handleCallback() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
     
-    AWS.config.region = AWS_CONFIG.region;
-    AWS.config.credentials = new AWS.CognitoIdentityCredentials({
-        IdentityPoolId: AWS_CONFIG.cognito.identityPoolId,
-        Logins: {
-            [`cognito-idp.${AWS_CONFIG.region}.amazonaws.com/${AWS_CONFIG.cognito.userPoolId}`]: idToken
-        }
-    });
-    
-    // Refresh credentials
-    AWS.config.credentials.refresh((error) => {
-        if (error) {
-            console.error('Credentials refresh error:', error);
-        } else {
-            console.log('AWS credentials refreshed successfully');
-        }
-    });
+    if (code) {
+        // Code received from Cognito - in real project, exchange for tokens
+        showToast('Login successful!', 'success');
+        
+        // Clean URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+        // Store mock token (in real project, get from token endpoint)
+        const mockToken = 'mock_token_' + Date.now();
+        localStorage.setItem('authToken', mockToken);
+        
+        checkAuth();
+    }
 }
 
-// Show authentication section
-function showAuthSection() {
-    hideLoading();
-    document.getElementById('authSection').style.display = 'block';
+// Login - redirect to Cognito Hosted UI
+function login() {
+    const loginUrl = `https://${AWS_CONFIG.cognito.domain}.auth.${AWS_CONFIG.region}.amazoncognito.com/login?` +
+        `client_id=${AWS_CONFIG.cognito.userPoolWebClientId}&` +
+        `response_type=code&` +
+        `scope=email+openid+profile&` +
+        `redirect_uri=${encodeURIComponent(window.location.origin)}`;
+    
+    window.location.href = loginUrl;
+}
+
+// Logout
+function logout() {
+    localStorage.removeItem('authToken');
+    
+    const logoutUrl = `https://${AWS_CONFIG.cognito.domain}.auth.${AWS_CONFIG.region}.amazoncognito.com/logout?` +
+        `client_id=${AWS_CONFIG.cognito.userPoolWebClientId}&` +
+        `logout_uri=${encodeURIComponent(window.location.origin)}`;
+    
+    window.location.href = logoutUrl;
+}
+
+// Get stored token
+function getStoredToken() {
+    return localStorage.getItem('authToken');
+}
+
+// Check if token is valid (simplified version)
+function isTokenValid(token) {
+    return token && token.startsWith('mock_token_');
+}
+
+// Setup user information
+function setupUser(token) {
+    currentUser = {
+        token: token,
+        name: 'Student User', // Simplified - in real project, parse from token
+        email: 'student@example.com'
+    };
+    
+    // Setup AWS credentials (simplified version)
+    AWS.config.region = AWS_CONFIG.region;
+    
+    // Display user name
+    document.getElementById('userName').textContent = currentUser.name;
+}
+
+// Get current user token (for API calls)
+function getCurrentUserToken() {
+    return Promise.resolve(currentUser ? currentUser.token : null);
+}
+
+// Show login screen
+function showLoginRequired() {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('loginRequired').style.display = 'block';
     document.getElementById('mainApp').style.display = 'none';
-    document.getElementById('navbar').style.display = 'none';
 }
 
 // Show main application
 function showMainApp() {
-    hideLoading();
-    document.getElementById('authSection').style.display = 'none';
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('loginRequired').style.display = 'none';
     document.getElementById('mainApp').style.display = 'block';
-    document.getElementById('navbar').style.display = 'block';
-    
-    // Display user information
-    if (currentUser) {
-        currentUser.getUserAttributes(function(err, attributes) {
-            if (!err && attributes) {
-                const givenName = attributes.find(attr => attr.getName() === 'given_name');
-                const familyName = attributes.find(attr => attr.getName() === 'family_name');
-                
-                if (givenName && familyName) {
-                    document.getElementById('userName').textContent = 
-                        `${givenName.getValue()} ${familyName.getValue()}`;
-                }
-            }
-        });
-    }
-    
-    // Show upload section by default
-    showSection('upload');
-}
-
-// Handle login
-function handleLogin(event) {
-    event.preventDefault();
-    showLoading();
-    
-    const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
-    
-    const authenticationData = {
-        Username: email,
-        Password: password
-    };
-    
-    const authenticationDetails = new AmazonCognitoIdentity.AuthenticationDetails(authenticationData);
-    const cognitoUser = new AmazonCognitoIdentity.CognitoUser({
-        Username: email,
-        Pool: userPool
-    });
-    
-    cognitoUser.authenticateUser(authenticationDetails, {
-        onSuccess: function(session) {
-            console.log('Login successful');
-            currentUser = cognitoUser;
-            setupAWSCredentials(session);
-            showMainApp();
-            showToast(MESSAGES.auth.loginSuccess, 'success');
-        },
-        onFailure: function(err) {
-            console.error('Login failed:', err);
-            hideLoading();
-            showToast(MESSAGES.auth.loginFailed + err.message, 'error');
-        },
-        newPasswordRequired: function(userAttributes, requiredAttributes) {
-            hideLoading();
-            showToast(MESSAGES.auth.passwordRequired, 'warning');
-            // TODO: Add new password setup logic here
-        }
-    });
-}
-
-// Handle signup
-function handleSignup(event) {
-    event.preventDefault();
-    showLoading();
-    
-    const firstName = document.getElementById('signupFirstName').value;
-    const lastName = document.getElementById('signupLastName').value;
-    const email = document.getElementById('signupEmail').value;
-    const password = document.getElementById('signupPassword').value;
-    
-    const attributeList = [
-        new AmazonCognitoIdentity.CognitoUserAttribute({
-            Name: 'email',
-            Value: email
-        }),
-        new AmazonCognitoIdentity.CognitoUserAttribute({
-            Name: 'given_name',
-            Value: firstName
-        }),
-        new AmazonCognitoIdentity.CognitoUserAttribute({
-            Name: 'family_name',
-            Value: lastName
-        })
-    ];
-    
-    userPool.signUp(email, password, attributeList, null, function(err, result) {
-        hideLoading();
-        
-        if (err) {
-            console.error('Signup failed:', err);
-            showToast(MESSAGES.auth.signupFailed + err.message, 'error');
-            return;
-        }
-        
-        console.log('Signup successful');
-        currentUser = result.user;
-        showVerificationForm();
-        showToast(MESSAGES.auth.signupSuccess, 'success');
-    });
-}
-
-// Handle email verification
-function handleVerification(event) {
-    event.preventDefault();
-    showLoading();
-    
-    const verificationCode = document.getElementById('verificationCode').value;
-    
-    if (!currentUser) {
-        hideLoading();
-        showToast('User information lost, please register again', 'error');
-        return;
-    }
-    
-    currentUser.confirmRegistration(verificationCode, true, function(err, result) {
-        hideLoading();
-        
-        if (err) {
-            console.error('Verification failed:', err);
-            showToast(MESSAGES.auth.verificationFailed + err.message, 'error');
-            return;
-        }
-        
-        console.log('Verification successful');
-        showLogin();
-        showToast(MESSAGES.auth.verificationSuccess, 'success');
-    });
-}
-
-// Logout function
-function logout() {
-    if (currentUser) {
-        currentUser.signOut();
-        currentUser = null;
-    }
-    
-    // Clear AWS credentials
-    AWS.config.credentials = null;
-    
-    showAuthSection();
-    showToast(MESSAGES.auth.logoutSuccess, 'success');
-}
-
-// Switch to signup form
-function showSignup() {
-    document.getElementById('loginForm').style.display = 'none';
-    document.getElementById('signupForm').style.display = 'block';
-    document.getElementById('verificationForm').style.display = 'none';
-}
-
-// Switch to login form
-function showLogin() {
-    document.getElementById('loginForm').style.display = 'block';
-    document.getElementById('signupForm').style.display = 'none';
-    document.getElementById('verificationForm').style.display = 'none';
-}
-
-// Show verification form
-function showVerificationForm() {
-    document.getElementById('loginForm').style.display = 'none';
-    document.getElementById('signupForm').style.display = 'none';
-    document.getElementById('verificationForm').style.display = 'block';
-}
-
-// Get current user JWT token
-function getCurrentUserToken() {
-    return new Promise((resolve, reject) => {
-        if (!currentUser) {
-            reject('No current user');
-            return;
-        }
-        
-        currentUser.getSession(function(err, session) {
-            if (err) {
-                reject(err);
-                return;
-            }
-            
-            if (session.isValid()) {
-                resolve(session.getIdToken().getJwtToken());
-            } else {
-                reject('Invalid session');
-            }
-        });
-    });
 }
