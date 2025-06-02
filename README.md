@@ -13,7 +13,7 @@ An AWS-based web application for automated bird species identification and file 
 
 ## Technology Stack
 
-- **Frontend**: Vanilla JavaScript, HTML5, CSS3
+- **Frontend**: Python
 - **Backend**: AWS Lambda, API Gateway
 - **Storage**: AWS S3
 - **Database**: AWS DynamoDB
