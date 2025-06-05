@@ -8,6 +8,7 @@ import pandas as pd
 from datetime import datetime
 import io
 import base64
+import requests
 
 # 页面配置
 st.set_page_config(
@@ -162,6 +163,39 @@ def process_uploaded_files(uploaded_files):
         
         # 模拟AI处理
         time.sleep(1)
+
+        # Getting pre-signed URL
+        # 获取预签名的 URL
+        try:
+            file_name = uploaded_file.name
+            file_type = uploaded_file.type
+
+            # Requesting pre-signed URL
+            api_url = "https://3dw1wpo1ra.execute-api.us-east-1.amazonaws.com/production/upload"
+            response = requests.post(
+                api_url,
+                json={"fileName": file_name, "fileType": file_type}
+            )
+
+            if response.status_code != 200:
+                st.error("Failed to get pre-signed URL")
+            else:
+                upload_url = response.json()["uploadUrl"]
+
+                # Upload file to S3 Bucket
+                s3_response = requests.put(
+                    upload_url,
+                    data=uploaded_file.getvalue(),
+                    headers={"Content-Type": file_type}
+                )
+
+                if s3_response.status_code == 200:
+                    st.success("File uploaded to S3!")
+                else:
+                    st.error(f"Upload failed with status: {s3_response.status_code}")
+
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
         
         # 生成模拟结果
         result = simulate_ai_detection(uploaded_file)
