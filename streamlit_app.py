@@ -138,19 +138,16 @@ def show_login_page():
             f"scope=openid%20profile%20email"
         )
 
-        # 使用 st.markdown 结合 HTML 链接来重定向
+        # 替换 webbrowser.open() 为直接的 HTML 链接
+        # 使用 target="_self" 确保在当前窗口重定向
         st.markdown(
-            f'<a href="{cognito_login_url}" target="_self">'  # 使用 target="_self" 确保在当前窗口重定向
+            f'<a href="{cognito_login_url}" target="_self">'
             f'<button style="background-color:#4CAF50;color:white;padding:10px 20px;border:none;cursor:pointer;width:100%;font-size:16px;">'
             f'🔑 Sign In with AWS Cognito'
             f'</button>'
             f'</a>',
             unsafe_allow_html=True
         )
-        # 或者更简单的 Streamlit 按钮样式 (不一定能完美模拟原按钮样式，但能点击)
-        # if st.button("🔑 Sign In with AWS Cognito", type="primary", use_container_width=True):
-        #     st.markdown(f'<meta http-equiv="refresh" content="0; url={cognito_login_url}">', unsafe_allow_html=True)
-
 
         st.markdown("---")
         st.info(f"📝 You will be redirected to AWS Cognito for authentication. After successful login, you'll be redirected back to: `{REDIRECT_URI}`")
