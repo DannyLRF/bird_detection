@@ -8,6 +8,9 @@ import pandas as pd
 from datetime import datetime
 import io
 import base64
+import requests
+from urllib.parse import urlencode, urlparse, parse_qs # 新增导入
+import webbrowser # 新增导入
 
 # 页面配置
 st.set_page_config(
@@ -19,20 +22,26 @@ st.set_page_config(
 
 # AWS配置
 AWS_CONFIG = {
-    'region': 'us-east-1',
+    'region': 'ap-southeast-2', # 修改为您的AWS地区
     'cognito': {
-        'user_pool_id': 'us-east-1_XXXXXXXXX',
-        'app_client_id': 'xxxxxxxxxxxxxxxxxx',
-        'domain': 'your-app-name'
+        'user_pool_id': 'ap-southeast-2_3O9qdhhLL', # 替换为您的用户池ID，例如 ap-southeast-2_your_pool_id_suffix
+        'app_client_id': '2lio1ipeg3tabimmqlmtuii1um', # 替换为您的App Client ID
+        'domain': 'ap-southeast-23o9qdhhll.auth.ap-southeast-2.amazoncognito.com' # 替换为您的Cognito域名前缀，例如 your-app-name
     },
     'api_gateway': {
-        'base_url': 'https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/dev'
+        'base_url': 'https://xxxxxxxxxx.execute-api.ap-southeast-2.amazonaws.com/dev' # 保持不变，除非API Gateway也在ap-southeast-2
     },
     's3': {
-        'bucket_name': 'your-bird-bucket'
+        'bucket_name': 'team99-uploaded-files' # 保持不变，除非S3桶名有变化
     }
 }
 
+# IMPORTANT: Streamlit runs on localhost by default. 
+# Make sure to set this to your actual deployed URL if deploying.
+# Also, ensure this URL is added to your Cognito User Pool App Client's Callback URLs.
+REDIRECT_URI = "https://99-birddetection.streamlit.app/" # Streamlit 默认本地运行端口，如果部署到其他地方需要修改
+
+# initialize session state
 # 初始化session state
 def init_session_state():
     if 'authenticated' not in st.session_state:
@@ -43,34 +52,106 @@ def init_session_state():
         st.session_state.upload_results = []
     if 'search_results' not in st.session_state:
         st.session_state.search_results = []
+    if 'id_token' not in st.session_state: # 新增：存储ID Token
+        st.session_state.id_token = None
+    if 'access_token' not in st.session_state: # 新增：存储Access Token
+        st.session_state.access_token = None
+
+# 新增函数：处理Cognito重定向后的逻辑
+def handle_cognito_redirect():
+    query_params = st.query_params
+
+    # 检查URL中是否有授权码
+    if 'code' in query_params:
+        auth_code = query_params['code']
+        st.sidebar.info(f"Received auth code: {auth_code[:10]}...") # 调试用
+
+        # 这里需要执行后端（或者在Streamlit应用中直接）与Cognito Token endpoint的交互
+        # 交换授权码为Token
+        token_endpoint = f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/token"
+
+        # PKCE 验证 (这里简化处理，实际需要生成 code_verifier 和 code_challenge)
+        # 对于 Streamlit，直接在前端处理 PKCE 比较复杂，通常会有一个简单的后端服务来处理
+        # 或者使用 AWS Amplify 等 SDK 来简化。
+        # 为了演示，我们暂时省略 PKCE 的生成和验证，但实际生产环境强烈建议实现。
+        # 简单的非PKCE方式 (不推荐用于SPA):
+
+        data = {
+            'grant_type': 'authorization_code',
+            'client_id': AWS_CONFIG['cognito']['app_client_id'],
+            'code': auth_code,
+            'redirect_uri': REDIRECT_URI
+            # 'code_verifier': st.session_state.pkce_code_verifier # PKCE 需要这个
+        }
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+
+        try:
+            token_response = requests.post(token_endpoint, data=urlencode(data), headers=headers)
+            token_response.raise_for_status() # 检查HTTP错误
+            tokens = token_response.json()
+
+            st.session_state.id_token = tokens.get('id_token')
+            st.session_state.access_token = tokens.get('access_token')
+
+            # 解码 ID Token 获取用户信息
+            import jwt # 需要安装 pyjwt: pip install pyjwt
+            decoded_id_token = jwt.decode(st.session_state.id_token, options={"verify_signature": False})
+            st.session_state.user_name = decoded_id_token.get('email', decoded_id_token.get('cognito:username', 'User'))
+
+            st.session_state.authenticated = True
+
+            # 清除URL中的授权码，避免重复处理
+            st.experimental_set_query_params() # Streamlit 1.x / 2.x
+            # st.query_params.clear() # Streamlit 1.18+ (更推荐)
+
+            st.rerun()
+
+        except requests.exceptions.RequestException as e:
+            st.error(f"Error exchanging code for tokens: {e}")
+            st.session_state.authenticated = False
+        except Exception as e:
+            st.error(f"Authentication failed: {e}")
+            st.session_state.authenticated = False
+    elif 'error' in query_params:
+        st.error(f"Cognito Error: {query_params['error_description']}")
+        st.session_state.authenticated = False
 
 # 认证函数
 def show_login_page():
     st.title("🕊️ Bird Tagging System")
     st.markdown("### Automatically identify and tag bird species using AI technology")
-    
+
     col1, col2, col3 = st.columns([1, 2, 1])
-    
+
     with col2:
         st.markdown("---")
         st.markdown("#### Please sign in to continue")
-        
-        # 模拟登录按钮
-        if st.button("🔑 Sign In with AWS Cognito", type="primary", use_container_width=True):
-            # 在实际项目中，这里会重定向到Cognito
-            with st.spinner("Redirecting to AWS Cognito..."):
-                time.sleep(2)
-                # 模拟登录成功
-                st.session_state.authenticated = True
-                st.session_state.user_name = "Student User"
-                st.rerun()
-        
-        st.markdown("---")
-        st.info("📝 In a real application, this would redirect to AWS Cognito for authentication.")
 
-# 主应用界面
+        # 构建 Cognito 登录 URL
+        cognito_login_url = (
+            f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/authorize?"
+            f"response_type=code&" # 对于SPA，使用 code 授权码流
+            f"client_id={AWS_CONFIG['cognito']['app_client_id']}&"
+            f"redirect_uri={REDIRECT_URI}&"
+            f"scope=openid%20profile%20email" # 必须包含 openid
+            # PKCE 相关参数，实际生产环境需要生成并传递 code_challenge 和 code_challenge_method
+            # f"&code_challenge={st.session_state.pkce_code_challenge}&code_challenge_method=S256"
+        )
+
+        if st.button("🔑 Sign In with AWS Cognito", type="primary", use_container_width=True):
+            # 重定向到Cognito登录页面
+            st.session_state.authenticated = False # 确保在重定向前设置为未认证
+            webbrowser.open(cognito_login_url) # 使用webbrowser打开新窗口/tab
+
+        st.markdown("---")
+        st.info(f"📝 You will be redirected to AWS Cognito for authentication. After successful login, you'll be redirected back to: `{REDIRECT_URI}`")
+
+
+# main application
 def show_main_app():
-    # 顶部标题栏
+    # top header
     col1, col2 = st.columns([3, 1])
     with col1:
         st.title("🕊️ Bird Tagging System")
@@ -86,10 +167,10 @@ def show_main_app():
     
     st.markdown("---")
     
-    # 创建三列布局
+    # create main layout
     col1, col2, col3 = st.columns([1, 1, 1])
     
-    # 上传区域
+    # upload section
     with col1:
         st.header("📤 Upload Files")
         uploaded_files = st.file_uploader(
@@ -103,14 +184,14 @@ def show_main_app():
             if st.button("🔍 Process Files", type="primary"):
                 process_uploaded_files(uploaded_files)
     
-    # 搜索区域
+    # search section
     with col2:
         st.header("🔍 Search Files")
         
-        # 基本搜索
+        # basic search
         search_query = st.text_input("Search by species name", placeholder="e.g., crow, pigeon")
         
-        # 高级筛选
+        # advanced filters
         with st.expander("🔧 Advanced Filters"):
             file_type_filter = st.selectbox("File Type", ["All", "Images", "Videos", "Audio"])
             confidence_filter = st.selectbox(
@@ -125,7 +206,7 @@ def show_main_app():
             st.session_state.search_results = []
             st.rerun()
     
-    # 统计区域
+    # statistics section
     with col3:
         st.header("📊 Statistics")
         show_statistics()
@@ -135,10 +216,10 @@ def show_main_app():
     
     st.markdown("---")
     
-    # 结果显示区域
+    # results section
     st.header("📋 Results")
     
-    # 标签页选择
+    # tabs for results
     tab1, tab2 = st.tabs(["📤 Upload Results", "🔍 Search Results"])
     
     with tab1:
@@ -147,7 +228,7 @@ def show_main_app():
     with tab2:
         show_search_results()
 
-# 处理上传文件
+# handle file uploads and processing
 def process_uploaded_files(uploaded_files):
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -155,22 +236,22 @@ def process_uploaded_files(uploaded_files):
     results = []
     
     for i, uploaded_file in enumerate(uploaded_files):
-        # 更新进度
+        # display file info
         progress = (i + 1) / len(uploaded_files)
         progress_bar.progress(progress)
         status_text.text(f"Processing {uploaded_file.name}...")
         
-        # 模拟AI处理
+        # simulate file upload to S3
         time.sleep(1)
         
-        # 生成模拟结果
+        # generate a mock result
         result = simulate_ai_detection(uploaded_file)
         results.append(result)
     
-    # 存储结果
+    # store results in session state
     st.session_state.upload_results.extend(results)
     
-    # 完成
+    # complete processing
     progress_bar.progress(1.0)
     status_text.text("✅ Processing complete!")
     
@@ -178,16 +259,16 @@ def process_uploaded_files(uploaded_files):
     time.sleep(1)
     st.rerun()
 
-# 模拟AI检测
+# simulate AI detection
 def simulate_ai_detection(uploaded_file):
-    # 模拟鸟类species
+    # simulate species detection
     species_list = ['Crow', 'Pigeon', 'Sparrow', 'Robin', 'Cardinal', 'Blue Jay', 'Eagle', 'Owl']
     detected_species = species_list[hash(uploaded_file.name) % len(species_list)]
     
-    # 模拟confidence
+    # simulate confidence score
     confidence = 0.75 + (hash(uploaded_file.name) % 25) / 100
     
-    # 模拟count
+    # simulate count of detected birds
     count = (hash(uploaded_file.name) % 3) + 1
     
     return {
@@ -198,10 +279,10 @@ def simulate_ai_detection(uploaded_file):
         'confidence': confidence,
         'count': count,
         'timestamp': datetime.now(),
-        'file_data': uploaded_file.read()  # 存储文件数据用于预览
+        'file_data': uploaded_file.read()  # store file data for preview
     }
 
-# 搜索文件
+# serch files based on query and filters
 def search_files(query, file_type_filter, confidence_filter):
     if not query.strip():
         st.warning("Please enter a search term")
@@ -210,17 +291,17 @@ def search_files(query, file_type_filter, confidence_filter):
     with st.spinner("Searching..."):
         time.sleep(1)
         
-        # 在上传结果中搜索
+        # search in uploaded results
         search_results = []
         for result in st.session_state.upload_results:
             if query.lower() in result['species'].lower():
                 search_results.append(result)
         
-        # 添加模拟数据库结果
+        # mock search results
         mock_results = generate_mock_search_results(query)
         search_results.extend(mock_results)
         
-        # 应用筛选
+        # filter results based on file type and confidence
         if file_type_filter != "All":
             if file_type_filter == "Images":
                 search_results = [r for r in search_results if r['file_type'].startswith('image/')]
@@ -242,7 +323,7 @@ def search_files(query, file_type_filter, confidence_filter):
         
     st.success(f"Found {len(search_results)} result(s) for '{query}'")
 
-# 生成模拟搜索结果
+# generate mock search results
 def generate_mock_search_results(query):
     mock_database = [
         {'file_name': 'crow_flock.jpg', 'species': 'Crow', 'confidence': 0.95, 'count': 3, 'file_type': 'image/jpeg'},
@@ -258,12 +339,12 @@ def generate_mock_search_results(query):
             results.append({
                 **item,
                 'timestamp': datetime.now(),
-                'file_data': None  # 模拟数据无文件内容
+                'file_data': None # no file data for mock results
             })
     
     return results
 
-# 显示上传结果
+# display upload results
 def show_upload_results():
     if not st.session_state.upload_results:
         st.info("📝 Upload files to see identification results here")
@@ -276,7 +357,7 @@ def show_upload_results():
             col1, col2 = st.columns([1, 2])
             
             with col1:
-                # 显示文件预览
+                # display file preview
                 if result['file_type'].startswith('image/') and result.get('file_data'):
                     try:
                         image = Image.open(io.BytesIO(result['file_data']))
@@ -301,7 +382,7 @@ def show_upload_results():
                     if st.button(f"📤 Share", key=f"share_{i}"):
                         st.info("Share feature coming soon!")
 
-# 显示搜索结果
+# display search results
 def show_search_results():
     if not st.session_state.search_results:
         st.info("🔍 Use the search function to find files")
@@ -309,7 +390,7 @@ def show_search_results():
     
     st.subheader(f"🔍 {len(st.session_state.search_results)} Search Result(s)")
     
-    # 创建表格显示
+    # create a DataFrame for search results
     df_data = []
     for result in st.session_state.search_results:
         df_data.append({
@@ -324,7 +405,7 @@ def show_search_results():
     df = pd.DataFrame(df_data)
     st.dataframe(df, use_container_width=True)
     
-    # 详细视图
+    # detailed view
     st.subheader("📋 Detailed View")
     for i, result in enumerate(st.session_state.search_results):
         with st.expander(f"📁 {result['file_name']}"):
@@ -336,7 +417,7 @@ def show_search_results():
                 st.metric("Count", result['count'])
                 st.metric("File Type", get_file_type_display(result['file_type']))
 
-# 显示统计信息
+# display statistics
 def show_statistics():
     total_files = len(st.session_state.upload_results)
     
@@ -344,7 +425,7 @@ def show_statistics():
         st.info("📊 Upload files to see statistics")
         return
     
-    # 基本统计
+    # basic statistics
     species_count = {}
     total_detections = 0
     high_confidence_count = 0
@@ -357,7 +438,7 @@ def show_statistics():
         if result['confidence'] >= 0.9:
             high_confidence_count += 1
     
-    # 显示指标
+    # display summary statistics
     col1, col2 = st.columns(2)
     with col1:
         st.metric("Total Files", total_files)
@@ -367,12 +448,12 @@ def show_statistics():
         st.metric("Unique Species", len(species_count))
         st.metric("High Confidence", f"{high_confidence_count}/{total_files}")
     
-    # 最常见的species
+    # most common species
     if species_count:
         most_common = max(species_count.items(), key=lambda x: x[1])
         st.metric("Most Common", f"{most_common[0]} ({most_common[1]})")
 
-# 显示详细统计
+# display detailed statistics
 def show_detailed_statistics():
     st.subheader("📊 Detailed Statistics")
     
@@ -380,24 +461,24 @@ def show_detailed_statistics():
         st.warning("No data available for statistics")
         return
     
-    # Species分布图表
+    # Species distribution, confidence distribution, and file type statistics
     species_data = {}
     confidence_data = []
     file_type_data = {}
     
     for result in st.session_state.upload_results:
-        # Species统计
+        # Species statistics
         species = result['species']
         species_data[species] = species_data.get(species, 0) + result['count']
         
-        # Confidence分布
+        # Confidence distribution
         confidence_data.append(result['confidence'])
         
-        # 文件类型统计
+        # file type statistics
         file_type = get_file_type_display(result['file_type'])
         file_type_data[file_type] = file_type_data.get(file_type, 0) + 1
     
-    # 创建图表
+    # create bar charts for species and file types
     col1, col2 = st.columns(2)
     
     with col1:
@@ -412,13 +493,13 @@ def show_detailed_statistics():
             file_type_df = pd.DataFrame(list(file_type_data.items()), columns=['Type', 'Count'])
             st.bar_chart(file_type_df.set_index('Type'))
     
-    # Confidence分布
+    # Confidence distribution
     st.subheader("🎯 Confidence Distribution")
     if confidence_data:
         confidence_df = pd.DataFrame({'Confidence': confidence_data})
         st.histogram(confidence_df['Confidence'], bins=20)
     
-    # 导出数据
+    # output report
     if st.button("📥 Download Report"):
         report_data = {
             'summary': {
@@ -448,7 +529,7 @@ def show_detailed_statistics():
             mime="application/json"
         )
 
-# 工具函数
+# tools for file type handling
 def get_file_type_emoji(file_type):
     if file_type.startswith('image/'):
         return '🖼️'
@@ -483,9 +564,15 @@ def format_file_size(size_bytes):
 # 主函数
 def main():
     init_session_state()
-    
-    if not st.session_state.authenticated:
-        show_login_page()
+
+    # 检查是否是Cognito重定向回来的URL
+    if 'authenticated' not in st.session_state or not st.session_state.authenticated:
+        # 如果是Cognito重定向回来，处理授权码
+        query_params = st.query_params
+        if 'code' in query_params or 'error' in query_params:
+            handle_cognito_redirect()
+        else:
+            show_login_page()
     else:
         show_main_app()
 
