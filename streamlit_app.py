@@ -132,18 +132,25 @@ def show_login_page():
         # 构建 Cognito 登录 URL
         cognito_login_url = (
             f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/authorize?"
-            f"response_type=code&" # 对于SPA，使用 code 授权码流
+            f"response_type=code&"
             f"client_id={AWS_CONFIG['cognito']['app_client_id']}&"
             f"redirect_uri={REDIRECT_URI}&"
-            f"scope=openid%20profile%20email" # 必须包含 openid
-            # PKCE 相关参数，实际生产环境需要生成并传递 code_challenge 和 code_challenge_method
-            # f"&code_challenge={st.session_state.pkce_code_challenge}&code_challenge_method=S256"
+            f"scope=openid%20profile%20email"
         )
 
-        if st.button("🔑 Sign In with AWS Cognito", type="primary", use_container_width=True):
-            # 重定向到Cognito登录页面
-            st.session_state.authenticated = False # 确保在重定向前设置为未认证
-            webbrowser.open(cognito_login_url) # 使用webbrowser打开新窗口/tab
+        # 使用 st.markdown 结合 HTML 链接来重定向
+        st.markdown(
+            f'<a href="{cognito_login_url}" target="_self">'  # 使用 target="_self" 确保在当前窗口重定向
+            f'<button style="background-color:#4CAF50;color:white;padding:10px 20px;border:none;cursor:pointer;width:100%;font-size:16px;">'
+            f'🔑 Sign In with AWS Cognito'
+            f'</button>'
+            f'</a>',
+            unsafe_allow_html=True
+        )
+        # 或者更简单的 Streamlit 按钮样式 (不一定能完美模拟原按钮样式，但能点击)
+        # if st.button("🔑 Sign In with AWS Cognito", type="primary", use_container_width=True):
+        #     st.markdown(f'<meta http-equiv="refresh" content="0; url={cognito_login_url}">', unsafe_allow_html=True)
+
 
         st.markdown("---")
         st.info(f"📝 You will be redirected to AWS Cognito for authentication. After successful login, you'll be redirected back to: `{REDIRECT_URI}`")
