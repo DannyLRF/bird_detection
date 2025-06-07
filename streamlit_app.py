@@ -368,7 +368,7 @@ def process_uploaded_files(uploaded_files):
 
         try:
             # Request pre-signed URL
-            api_url = "https://3dw1wpo1ra.execute-api.us-east-1.amazonaws.com/dev/api/upload"
+            api_url = "https://d2u7y2aieb.execute-api.ap-southeast-2.amazonaws.com/dev/api/upload"
             response = requests.post(
                 api_url,
                 json={"fileName": file_name, "fileType": file_type}
