@@ -11,6 +11,9 @@ import base64
 import requests
 from urllib.parse import urlencode, urlparse, parse_qs # 新增导入
 import webbrowser # 新增导入
+import hashlib
+import secrets
+import urllib.parse
 
 # 页面配置
 st.set_page_config(
