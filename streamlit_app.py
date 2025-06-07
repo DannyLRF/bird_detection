@@ -9,13 +9,19 @@ from datetime import datetime
 import io
 import base64
 import requests
-from urllib.parse import urlencode, urlparse, parse_qs # 新增导入
-import webbrowser # 新增导入
+from urllib.parse import urlencode, urlparse, parse_qs
+import webbrowser
 import hashlib
 import secrets
 import urllib.parse
 from datetime import datetime
 
+# 添加 JWT 导入和错误处理
+try:
+    import jwt
+except ImportError:
+    st.error("Missing required dependency: PyJWT. Please install it with: pip install PyJWT")
+    st.stop()
 
 # 页面配置
 st.set_page_config(
@@ -41,10 +47,9 @@ AWS_CONFIG = {
 # IMPORTANT: Streamlit runs on localhost by default. 
 # Make sure to set this to your actual deployed URL if deploying.
 # Also, ensure this URL is added to your Cognito User Pool App Client's Callback URLs.
-REDIRECT_URI = "https://99-birddetection.streamlit.app/" # Streamlit 默认本地运行端口，如果部署到其他地方需要修改
+REDIRECT_URI = "https://99-birddetection.streamlit.app/"
 
 # initialize session state
-# 初始化session state
 def init_session_state():
     """初始化 session state"""
     defaults = {
@@ -60,67 +65,6 @@ def init_session_state():
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
-
-# 新增函数：处理Cognito重定向后的逻辑
-def handle_cognito_redirect():
-    query_params = st.query_params
-
-    # 检查URL中是否有授权码
-    if 'code' in query_params:
-        auth_code = query_params['code']
-        st.sidebar.info(f"Received auth code: {auth_code[:10]}...") # 调试用
-
-        # 这里需要执行后端（或者在Streamlit应用中直接）与Cognito Token endpoint的交互
-        # 交换授权码为Token
-        token_endpoint = f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/token"
-
-        # PKCE 验证 (这里简化处理，实际需要生成 code_verifier 和 code_challenge)
-        # 对于 Streamlit，直接在前端处理 PKCE 比较复杂，通常会有一个简单的后端服务来处理
-        # 或者使用 AWS Amplify 等 SDK 来简化。
-        # 为了演示，我们暂时省略 PKCE 的生成和验证，但实际生产环境强烈建议实现。
-        # 简单的非PKCE方式 (不推荐用于SPA):
-
-        data = {
-            'grant_type': 'authorization_code',
-            'client_id': AWS_CONFIG['cognito']['app_client_id'],
-            'code': auth_code,
-            'redirect_uri': REDIRECT_URI
-            # 'code_verifier': st.session_state.pkce_code_verifier # PKCE 需要这个
-        }
-        headers = {
-            'Content-Type': 'application/x-www-form-urlencoded'
-        }
-
-        try:
-            token_response = requests.post(token_endpoint, data=urlencode(data), headers=headers)
-            token_response.raise_for_status() # 检查HTTP错误
-            tokens = token_response.json()
-
-            st.session_state.id_token = tokens.get('id_token')
-            st.session_state.access_token = tokens.get('access_token')
-
-            # 解码 ID Token 获取用户信息
-            import jwt # 需要安装 pyjwt: pip install pyjwt
-            decoded_id_token = jwt.decode(st.session_state.id_token, options={"verify_signature": False})
-            st.session_state.user_name = decoded_id_token.get('email', decoded_id_token.get('cognito:username', 'User'))
-
-            st.session_state.authenticated = True
-
-            # 清除URL中的授权码，避免重复处理
-            st.experimental_set_query_params() # Streamlit 1.x / 2.x
-            # st.query_params.clear() # Streamlit 1.18+ (更推荐)
-
-            st.rerun()
-
-        except requests.exceptions.RequestException as e:
-            st.error(f"Error exchanging code for tokens: {e}")
-            st.session_state.authenticated = False
-        except Exception as e:
-            st.error(f"Authentication failed: {e}")
-            st.session_state.authenticated = False
-    elif 'error' in query_params:
-        st.error(f"Cognito Error: {query_params['error_description']}")
-        st.session_state.authenticated = False
 
 def show_login_page():
     """显示登录页面"""
@@ -216,8 +160,6 @@ def handle_cognito_callback():
         
         try:
             # 交换授权码为令牌
-            import requests
-            
             token_endpoint = f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/token"
             
             data = {
@@ -242,23 +184,29 @@ def handle_cognito_callback():
                 st.session_state.id_token = tokens.get('id_token')
                 st.session_state.access_token = tokens.get('access_token')
                 
-                # 解析用户信息
-                import jwt
-                decoded = jwt.decode(
-                    st.session_state.id_token,
-                    options={"verify_signature": False}
-                )
-                
-                st.session_state.user_name = (
-                    decoded.get('email') or 
-                    decoded.get('cognito:username') or 
-                    'User'
-                )
-                st.session_state.authenticated = True
-                
-                # 清除 URL 参数
-                st.query_params.clear()
-                return True
+                # 解析用户信息 - 添加错误处理
+                try:
+                    decoded = jwt.decode(
+                        st.session_state.id_token,
+                        options={"verify_signature": False}
+                    )
+                    
+                    st.session_state.user_name = (
+                        decoded.get('email') or 
+                        decoded.get('cognito:username') or 
+                        'User'
+                    )
+                    st.session_state.authenticated = True
+                    
+                    # 清除 URL 参数
+                    st.query_params.clear()
+                    return True
+                    
+                except Exception as jwt_error:
+                    st.session_state.auth_error = f"JWT decode error: {str(jwt_error)}"
+                    st.query_params.clear()
+                    return False
+                    
             else:
                 st.session_state.auth_error = f"Token exchange failed: {response.text}"
                 st.query_params.clear()
@@ -432,7 +380,7 @@ def simulate_ai_detection(uploaded_file):
         'file_data': uploaded_file.read()  # store file data for preview
     }
 
-# serch files based on query and filters
+# search files based on query and filters
 def search_files(query, file_type_filter, confidence_filter):
     if not query.strip():
         st.warning("Please enter a search term")
