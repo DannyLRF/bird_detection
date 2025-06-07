@@ -244,9 +244,37 @@ def process_uploaded_files(uploaded_files):
         progress = (i + 1) / len(uploaded_files)
         progress_bar.progress(progress)
         status_text.text(f"Processing {uploaded_file.name}...")
-        
-        # simulate file upload to S3
-        time.sleep(1)
+
+        file_name = uploaded_file.name
+        file_type = uploaded_file.type
+
+        try:
+            # Request pre-signed URL
+            api_url = "https://3dw1wpo1ra.execute-api.us-east-1.amazonaws.com/production/upload"
+            response = requests.post(
+                api_url,
+                json={"fileName": file_name, "fileType": file_type}
+            )
+
+            if response.status_code != 200:
+                st.error("Failed to get pre-signed URL")
+            else:
+                upload_url = response.json()["uploadUrl"]
+
+                # Upload file to S3
+                s3_response = requests.put(
+                    upload_url,
+                    data=uploaded_file.getvalue(),
+                    headers={"Content-Type": file_type}
+                )
+
+                if s3_response.status_code == 200:
+                    st.success("File upload successful!")
+                else:
+                    st.error(f"Upload failed with status: {s3_response.status_code}")
+
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
         
         # generate a mock result
         result = simulate_ai_detection(uploaded_file)

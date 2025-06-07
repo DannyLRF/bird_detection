@@ -6,21 +6,22 @@ s3 = boto3.client("s3")
 BUCKET_NAME = os.environ["BUCKET_NAME"]  # Set this as an env variable in Lambda
 
 def getSignedURL(event, context):
+    print("EVENT BODY:", event.get("body"))
     try:
         body = json.loads(event.get("body", "{}"))
         file_name = body["fileName"]
         file_type = body["fileType"]  # Optional, used for headers
-
+        key = f"images/{file_name}"
         # Generate pre-signed URL
         url = s3.generate_presigned_url(
             ClientMethod="put_object",
             Params={
                 "Bucket": BUCKET_NAME,
-                "Key": file_name,
+                "Key": key,
                 "ContentType": file_type
             },
             ExpiresIn=180,
-            HttpMethod="POST"  # URL expires in 3 minutes
+            HttpMethod="PUT"  # URL expires in 3 minutes
         )
 
         return {
@@ -38,23 +39,3 @@ def getSignedURL(event, context):
             "body": json.dumps({ "error": str(e) })
         }
     
-# def presignedTest():
-#     request = {
-#         "resource": "/upload",
-#         "path": "/upload",
-#         "httpMethod": "POST",
-#         "headers": {
-#             "Content-Type": "application/json"
-#             },
-#             "queryStringParameters": None,
-#             "pathParameters": None,
-#             "body": {"fileName": "photo.jpg", 
-#                      "fileType": "jpeg"},
-#             "isBase64Encoded": False
-#             }
-    
-#     to_send = json.dumps(request)
-    
-#     url = getSignedURL(to_send, None)
-#     print(url)
-
