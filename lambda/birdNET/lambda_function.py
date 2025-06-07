@@ -1,7 +1,7 @@
 import os
 import sys
 
-# 在导入其他库之前设置环境变量
+# Set environment variables before importing other libraries
 os.environ['NUMBA_CACHE_DIR'] = '/tmp'
 os.environ['NUMBA_DISABLE_JIT'] = '1'
 os.environ['LIBROSA_CACHE_DIR'] = '/tmp'
@@ -17,28 +17,28 @@ import logging
 import tensorflow as tf
 from urllib.parse import unquote_plus
 
-# 设置日志
+# Set up logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 class AudioProcessor:
-    """轻量级音频处理工具"""
+    """Lightweight audio processing tool"""
     
     @staticmethod
     def load_audio(file_path, target_sr=48000):
-        """加载音频文件"""
+        """Load audio file"""
         try:
-            # 使用librosa加载
+            # Load using librosa
             audio, sr = librosa.load(file_path, sr=target_sr, mono=True)
             return audio.astype(np.float32), target_sr
             
         except Exception as e:
-            logger.error(f"音频加载失败: {e}")
+            logger.error(f"Audio loading failed: {e}")
             raise
     
     @staticmethod
     def segment_audio(audio, sr, segment_length=3.0):
-        """将音频分割为固定长度的片段"""
+        """Split audio into fixed-length segments"""
         segment_samples = int(segment_length * sr)
         segments = []
         
@@ -47,8 +47,8 @@ class AudioProcessor:
             
             if len(segment) == segment_samples:
                 segments.append(segment)
-            elif len(segment) > segment_samples * 0.5:  # 至少1.5秒
-                # 用零填充到完整长度
+            elif len(segment) > segment_samples * 0.5:  # At least 1.5 seconds
+                # Pad with zeros to full length
                 padded_segment = np.pad(segment, (0, segment_samples - len(segment)), 'constant')
                 segments.append(padded_segment)
         
@@ -58,7 +58,7 @@ class BirdNETPredictor:
     def __init__(self):
         self.model_path = '/tmp/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite'
         self.labels_path = '/tmp/BirdNET_GLOBAL_6K_V2.4_Labels.txt'
-        # 修改模型和标签文件所在的S3桶和键
+        # Modify the S3 bucket and key for model and label files
         self.model_s3_bucket = 'team99-bird-detection-models'
         self.model_s3_key = 'birdNET/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite'
         self.labels_s3_bucket = 'team99-bird-detection-models'
@@ -73,107 +73,107 @@ class BirdNETPredictor:
         self._model_loaded = False
         
     def _download_files_from_s3(self):
-        """从S3下载模型和标签文件"""
+        """Download model and label files from S3"""
         if self._model_loaded:
             return
             
         s3 = boto3.client('s3')
         
         try:
-            # 下载模型文件
+            # Download model file
             if not os.path.exists(self.model_path):
-                logger.info("下载模型文件...")
+                logger.info("Downloading model file...")
                 s3.download_file(self.model_s3_bucket, self.model_s3_key, self.model_path)
-                logger.info(f"模型文件下载完成: {os.path.getsize(self.model_path)} bytes")
+                logger.info(f"Model file download completed: {os.path.getsize(self.model_path)} bytes")
             
-            # 下载标签文件
+            # Download label file
             if not os.path.exists(self.labels_path):
-                logger.info("下载标签文件...")
+                logger.info("Downloading label file...")
                 s3.download_file(self.labels_s3_bucket, self.labels_s3_key, self.labels_path)
-                logger.info(f"标签文件下载完成: {os.path.getsize(self.labels_path)} bytes")
+                logger.info(f"Label file download completed: {os.path.getsize(self.labels_path)} bytes")
                 
             self._model_loaded = True
                 
         except Exception as e:
-            logger.error(f"从S3下载文件失败: {e}")
+            logger.error(f"Failed to download files from S3: {e}")
             raise
     
     def _load_labels(self):
-        """加载鸟类标签"""
+        """Load bird species labels"""
         try:
             with open(self.labels_path, 'r', encoding='utf-8') as f:
                 self.labels = [line.strip() for line in f.readlines()]
-            logger.info(f"加载了 {len(self.labels)} 个标签")
+            logger.info(f"Loaded {len(self.labels)} labels")
         except Exception as e:
-            logger.error(f"加载标签失败: {e}")
+            logger.error(f"Failed to load labels: {e}")
             raise
     
     def _load_model(self):
-        """加载TensorFlow Lite模型"""
+        """Load TensorFlow Lite model"""
         try:
             self.interpreter = tf.lite.Interpreter(model_path=self.model_path)
             self.interpreter.allocate_tensors()
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
-            logger.info("模型加载成功")
-            logger.info(f"输入形状: {self.input_details[0]['shape']}")
+            logger.info("Model loaded successfully")
+            logger.info(f"Input shape: {self.input_details[0]['shape']}")
         except Exception as e:
-            logger.error(f"加载模型失败: {e}")
+            logger.error(f"Failed to load model: {e}")
             raise
     
     def _preprocess_audio_from_s3(self, bucket_name: str, object_key: str):
-        """从S3下载并预处理音频文件"""
+        """Download and preprocess audio file from S3"""
         s3 = boto3.client('s3')
         
-        # 创建临时文件
+        # Create temporary file
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
             tmp_path = tmp_file.name
         
         try:
-            # 从S3下载音频文件
-            logger.info(f"从S3下载音频文件: s3://{bucket_name}/{object_key}")
+            # Download audio file from S3
+            logger.info(f"Downloading audio file from S3: s3://{bucket_name}/{object_key}")
             s3.download_file(bucket_name, object_key, tmp_path)
             
-            # 使用音频处理器加载和分割
+            # Load and segment using audio processor
             audio, sr = AudioProcessor.load_audio(tmp_path, self.sample_rate)
-            logger.info(f"音频加载完成: 长度={len(audio)}, 采样率={sr}")
+            logger.info(f"Audio loaded successfully: length={len(audio)}, sample_rate={sr}")
             
             segments = AudioProcessor.segment_audio(audio, sr, self.segment_length)
-            logger.info(f"分割为 {len(segments)} 个片段")
+            logger.info(f"Split into {len(segments)} segments")
             
             return segments, object_key
             
         except Exception as e:
-            logger.error(f"从S3处理音频失败: {e}")
+            logger.error(f"Failed to process audio from S3: {e}")
             raise
         finally:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
     
     def _preprocess_audio_from_base64(self, audio_data: bytes):
-        """从base64数据预处理音频"""
+        """Preprocess audio from base64 data"""
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
             tmp_file.write(audio_data)
             tmp_path = tmp_file.name
         
         try:
             audio, sr = AudioProcessor.load_audio(tmp_path, self.sample_rate)
-            logger.info(f"音频加载完成: 长度={len(audio)}, 采样率={sr}")
+            logger.info(f"Audio loaded successfully: length={len(audio)}, sample_rate={sr}")
             
             segments = AudioProcessor.segment_audio(audio, sr, self.segment_length)
-            logger.info(f"分割为 {len(segments)} 个片段")
+            logger.info(f"Split into {len(segments)} segments")
             
             return segments, "uploaded_audio"
             
         except Exception as e:
-            logger.error(f"音频预处理失败: {e}")
+            logger.error(f"Audio preprocessing failed: {e}")
             raise
         finally:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
     
     def predict(self, audio_segments, confidence_threshold=0.1):
-        """预测鸟类"""
+        """Predict bird species"""
         if self.interpreter is None:
             self._download_files_from_s3()
             self._load_labels()
@@ -183,17 +183,17 @@ class BirdNETPredictor:
         
         for i, segment in enumerate(audio_segments):
             try:
-                # 预处理音频段
+                # Preprocess audio segment
                 input_data = np.expand_dims(segment, axis=0).astype(np.float32)
                 
-                # 运行推理
+                # Run inference
                 self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
                 self.interpreter.invoke()
                 
-                # 获取预测结果
+                # Get prediction results
                 predictions = self.interpreter.get_tensor(self.output_details[0]['index'])[0]
                 
-                # 获取top 5预测
+                # Get top 5 predictions
                 top_indices = np.argsort(predictions)[-5:][::-1]
                 
                 for idx in top_indices:
@@ -210,52 +210,52 @@ class BirdNETPredictor:
                         })
                         
             except Exception as e:
-                logger.error(f"预测片段 {i} 时出错: {e}")
+                logger.error(f"Error predicting segment {i}: {e}")
                 continue
         
-        # 按置信度排序
+        # Sort by confidence
         results.sort(key=lambda x: x['confidence'], reverse=True)
         
         return results
 
     def _save_predictions_to_s3(self, predictions_data: dict, original_object_key: str):
-        """将预测结果保存到S3"""
+        """Save prediction results to S3"""
         s3 = boto3.client('s3')
         output_bucket_name = 'team99-uploaded-files'
         
-        # 构建输出文件键
-        # 移除原文件名的扩展名，并添加.json
+        # Build output file key
+        # Remove original filename extension and add .json
         base_filename = Path(original_object_key).stem
         output_s3_key = f"annotated/audio/{base_filename}_predictions.json"
 
         try:
-            logger.info(f"将预测结果保存到S3: s3://{output_bucket_name}/{output_s3_key}")
+            logger.info(f"Saving prediction results to S3: s3://{output_bucket_name}/{output_s3_key}")
             s3.put_object(
                 Bucket=output_bucket_name,
                 Key=output_s3_key,
                 Body=json.dumps(predictions_data, ensure_ascii=False),
                 ContentType='application/json'
             )
-            logger.info("预测结果保存成功。")
+            logger.info("Prediction results saved successfully.")
             return output_s3_key
         except Exception as e:
-            logger.error(f"保存预测结果到S3失败: {e}")
+            logger.error(f"Failed to save prediction results to S3: {e}")
             raise
 
-# 全局变量，避免冷启动重复初始化
+# Global variable to avoid cold start reinitialization
 predictor = None
 
 def lambda_handler(event, context):
     global predictor
     
     try:
-        # 初始化预测器
+        # Initialize predictor
         if predictor is None:
             predictor = BirdNETPredictor()
         
-        logger.info(f"收到事件: {json.dumps(event)}")
+        logger.info(f"Received event: {json.dumps(event)}")
         
-        # 处理S3事件
+        # Handle S3 events
         if 'Records' in event:
             results_all = []
             
@@ -265,24 +265,24 @@ def lambda_handler(event, context):
                     bucket_name = s3_info['bucket']['name']
                     object_key = unquote_plus(s3_info['object']['key'])
                     
-                    # 确保object_key是相对路径，不包含桶名
-                    # 如果S3事件的bucket_name包含了多余的部分（如team99-uploaded-files/audio）
-                    # 那么需要修正object_key，使其只包含文件路径
+                    # Ensure object_key is a relative path, not including bucket name
+                    # If S3 event bucket_name contains extra parts (like team99-uploaded-files/audio)
+                    # then we need to correct object_key to include only the file path
                     if bucket_name.endswith('/audio'):
-                        # 假设实际的桶名是team99-uploaded-files
+                        # Assume actual bucket name is team99-uploaded-files
                         actual_bucket_name = bucket_name[:-len('/audio')]
-                        # 并且object_key可能不包含audio/前缀，需要补上
+                        # And object_key might not include audio/ prefix, need to add it
                         if not object_key.startswith('audio/'):
                              object_key = f"audio/{object_key}"
                     else:
-                        actual_bucket_name = bucket_name # 正常的桶名
+                        actual_bucket_name = bucket_name # Normal bucket name
                         
-                    logger.info(f"处理S3对象: s3://{actual_bucket_name}/{object_key}")
+                    logger.info(f"Processing S3 object: s3://{actual_bucket_name}/{object_key}")
                     
-                    # 从S3处理音频
+                    # Process audio from S3
                     audio_segments, filename = predictor._preprocess_audio_from_s3(actual_bucket_name, object_key)
                     
-                    # 运行预测
+                    # Run prediction
                     confidence_threshold = 0.1
                     predictions = predictor.predict(audio_segments, confidence_threshold)
                     
@@ -296,12 +296,12 @@ def lambda_handler(event, context):
                     
                     results_all.append(result)
 
-                    # 将预测结果保存到S3
+                    # Save prediction results to S3
                     try:
                         output_s3_path = predictor._save_predictions_to_s3(result, object_key)
                         result['output_s3_path'] = output_s3_path
                     except Exception as e:
-                        logger.error(f"无法保存预测结果到S3: {e}")
+                        logger.error(f"Unable to save prediction results to S3: {e}")
                         result['s3_save_error'] = str(e)
             
             return {
@@ -318,7 +318,7 @@ def lambda_handler(event, context):
                 }, ensure_ascii=False)
             }
         
-        # 处理直接的API调用（包含audio_data的情况）
+        # Handle direct API calls (cases with audio_data)
         if 'body' in event:
             if isinstance(event['body'], str):
                 body = json.loads(event['body'])
@@ -340,10 +340,10 @@ def lambda_handler(event, context):
                 'body': json.dumps({'error': 'No audio data provided or S3 event format'})
             }
         
-        # 解码音频数据
+        # Decode audio data
         try:
             audio_data = base64.b64decode(audio_base64)
-            logger.info(f"音频数据大小: {len(audio_data)} bytes")
+            logger.info(f"Audio data size: {len(audio_data)} bytes")
         except Exception as e:
             return {
                 'statusCode': 400,
@@ -354,13 +354,13 @@ def lambda_handler(event, context):
                 'body': json.dumps({'error': f'Invalid base64 audio data: {str(e)}'})
             }
         
-        # 预处理音频
+        # Preprocess audio
         audio_segments, filename = predictor._preprocess_audio_from_base64(audio_data)
         
-        # 运行预测
+        # Run prediction
         predictions = predictor.predict(audio_segments, confidence_threshold)
         
-        # 格式化结果
+        # Format results
         result = {
             'success': True,
             'processing_type': 'direct_upload',
@@ -373,18 +373,18 @@ def lambda_handler(event, context):
             }
         }
 
-        # 对于直接上传的音频，我们也尝试保存结果到S3，需要一个文件名来构建S3键
-        # 假设直接上传的文件名是'uploaded_audio.wav'或者可以通过其他方式获取
-        # 这里为了演示，我们假设它有一个虚拟的文件名
+        # For directly uploaded audio, we also try to save results to S3, need a filename to build S3 key
+        # Assume directly uploaded files are named 'uploaded_audio.wav' or can be obtained through other means
+        # Here for demonstration, we assume it has a virtual filename
         try:
-            # 对于直接上传的音频，我们无法直接获取原始的object_key
-            # 这里可以生成一个基于当前时间戳的唯一文件名，或者在请求体中要求提供一个文件名
-            # 为了简化，我们假设它是一个固定的名称，或者从事件中获取（如果存在）
-            original_file_identifier = body.get('filename', 'uploaded_audio.wav') # 假设API调用可以提供文件名
+            # For directly uploaded audio, we can't directly get the original object_key
+            # Here we can generate a unique filename based on current timestamp, or require a filename in the request body
+            # For simplicity, we assume it's a fixed name, or get it from event (if exists)
+            original_file_identifier = body.get('filename', 'uploaded_audio.wav') # Assume API call can provide filename
             output_s3_path = predictor._save_predictions_to_s3(result, original_file_identifier)
             result['output_s3_path'] = output_s3_path
         except Exception as e:
-            logger.error(f"无法保存直接上传的音频的预测结果到S3: {e}")
+            logger.error(f"Unable to save prediction results for directly uploaded audio to S3: {e}")
             result['s3_save_error'] = str(e)
         
         return {
@@ -397,7 +397,7 @@ def lambda_handler(event, context):
         }
         
     except Exception as e:
-        logger.error(f"处理请求时出错: {str(e)}")
+        logger.error(f"Error processing request: {str(e)}")
         return {
             'statusCode': 500,
             'headers': {
