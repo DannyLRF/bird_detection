@@ -3,7 +3,7 @@ import sys
 
 # Set environment variables before importing other libraries
 os.environ['NUMBA_CACHE_DIR'] = '/tmp'
-os.environ['NUMBA_DISABLE_JIT'] = '1'
+# os.environ['NUMBA_DISABLE_JIT'] = '1'
 os.environ['LIBROSA_CACHE_DIR'] = '/tmp'
 
 import json
@@ -15,11 +15,64 @@ import librosa
 from pathlib import Path
 import logging
 import tensorflow as tf
+import uuid
+from collections import Counter
+from decimal import Decimal
+from pathlib import Path
 from urllib.parse import unquote_plus
 
 # Set up logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+TABLE_NAME = "BirdTagsData"
+dynamodb = boto3.resource("dynamodb")
+table = dynamodb.Table(TABLE_NAME)
+
+SIMPLIFIED_LABELS = ["Crow", "Kingfisher", "Myna", "Owl", "Peacock", "Pigeon", "Sparrow"]
+
+def simplify_species_name(full_name):
+    for label in SIMPLIFIED_LABELS:
+        if label.lower() in full_name.lower():
+            return label
+    return None
+
+def store_predictions_to_dynamodb_audio(prediction_result):
+    logger.info("Storing audio predictions to DynamoDB...")
+    file_key = prediction_result["file"]
+    bucket = prediction_result["bucket"]
+    filename = Path(file_key).name
+    predictions = prediction_result["predictions"]
+    
+    simplified_counts = Counter()
+    
+    for p in predictions:
+        print("Prediction:", p)
+        simplified = simplify_species_name(p["species"])
+        if simplified:
+            simplified_counts[simplified] += 1
+    
+    if not simplified_counts:
+        print("No relevant bird species detected, skipping DynamoDB storage.")
+        return  # Nothing relevant to store
+    
+    print("Relevant bird species counts:", simplified_counts)
+    file_id = str(uuid.uuid4())
+    s3_base = f"s3://{bucket}"
+    
+    item = {
+        "file_id": file_id,
+        "annotated_s3_url": f"{s3_base}/annotated/audio/{Path(filename).stem}_predictions.json",
+        "detected_birds": [{"label": label, "count": count} for label, count in simplified_counts.items()],
+        "file_type": "audio",
+        "original_s3_url": f"{s3_base}/{file_key}",
+        "thumbnail_s3_url": None
+    }
+
+    print("Storing item in DynamoDB:", item)
+    table.put_item(Item=item)
+    print("Stored item in DynamoDB successfully.")
+    logger.info(f"Stored audio prediction for {filename} in DynamoDB.")
 
 class AudioProcessor:
     """Lightweight audio processing tool"""
@@ -299,6 +352,7 @@ def lambda_handler(event, context):
                     # Save prediction results to S3
                     try:
                         output_s3_path = predictor._save_predictions_to_s3(result, object_key)
+                        store_predictions_to_dynamodb_audio(result)
                         result['output_s3_path'] = output_s3_path
                     except Exception as e:
                         logger.error(f"Unable to save prediction results to S3: {e}")
@@ -382,6 +436,7 @@ def lambda_handler(event, context):
             # For simplicity, we assume it's a fixed name, or get it from event (if exists)
             original_file_identifier = body.get('filename', 'uploaded_audio.wav') # Assume API call can provide filename
             output_s3_path = predictor._save_predictions_to_s3(result, original_file_identifier)
+            store_predictions_to_dynamodb_audio(result)
             result['output_s3_path'] = output_s3_path
         except Exception as e:
             logger.error(f"Unable to save prediction results for directly uploaded audio to S3: {e}")
