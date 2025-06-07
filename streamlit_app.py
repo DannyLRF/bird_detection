@@ -9,10 +9,21 @@ from datetime import datetime
 import io
 import base64
 import requests
-from urllib.parse import urlencode, urlparse, parse_qs # 新增导入
-import webbrowser # 新增导入
+from urllib.parse import urlencode, urlparse, parse_qs
+import webbrowser
+import hashlib
+import secrets
+import urllib.parse
+from datetime import datetime
 
-# 页面配置
+# Add JWT import and error handling
+try:
+    import jwt
+except ImportError:
+    st.error("Missing required dependency: PyJWT. Please install it with: pip install PyJWT")
+    st.stop()
+
+# Page configuration
 st.set_page_config(
     page_title="Bird Tagging System",
     page_icon="🕊️",
@@ -20,142 +31,241 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# AWS配置
+# AWS configuration
 AWS_CONFIG = {
-    'region': 'ap-southeast-2', # 修改为您的AWS地区
+    'region': 'ap-southeast-2',
     'cognito': {
-        'user_pool_id': 'ap-southeast-2_3O9qdhhLL', # 替换为您的用户池ID，例如 ap-southeast-2_your_pool_id_suffix
-        'app_client_id': '2lio1ipeg3tabimmqlmtuii1um', # 替换为您的App Client ID
-        'domain': 'ap-southeast-23o9qdhhll.auth.ap-southeast-2.amazoncognito.com' # 替换为您的Cognito域名前缀，例如 your-app-name
-    },
-    'api_gateway': {
-        'base_url': 'https://xxxxxxxxxx.execute-api.ap-southeast-2.amazonaws.com/dev' # 保持不变，除非API Gateway也在ap-southeast-2
+        'user_pool_id': 'ap-southeast-2_3O9qdhhLL',
+        'app_client_id': '2lio1ipeg3tabimmqlmtuii1um',
+        'domain': 'ap-southeast-23o9qdhhll.auth.ap-southeast-2.amazoncognito.com'
     },
     's3': {
-        'bucket_name': 'team99-uploaded-files' # 保持不变，除非S3桶名有变化
+        'bucket_name': 'team99-uploaded-files'
     }
 }
 
 # IMPORTANT: Streamlit runs on localhost by default. 
 # Make sure to set this to your actual deployed URL if deploying.
 # Also, ensure this URL is added to your Cognito User Pool App Client's Callback URLs.
-REDIRECT_URI = "https://99-birddetection.streamlit.app/" # Streamlit 默认本地运行端口，如果部署到其他地方需要修改
+REDIRECT_URI = "https://99-birddetection.streamlit.app/"
 
-# initialize session state
-# 初始化session state
+# Initialize session state
 def init_session_state():
-    if 'authenticated' not in st.session_state:
-        st.session_state.authenticated = False
-    if 'user_name' not in st.session_state:
-        st.session_state.user_name = ''
-    if 'upload_results' not in st.session_state:
-        st.session_state.upload_results = []
-    if 'search_results' not in st.session_state:
-        st.session_state.search_results = []
-    if 'id_token' not in st.session_state: # 新增：存储ID Token
-        st.session_state.id_token = None
-    if 'access_token' not in st.session_state: # 新增：存储Access Token
-        st.session_state.access_token = None
+    """Initialize session state variables"""
+    defaults = {
+        'authenticated': False,
+        'user_name': '',
+        'upload_results': [],
+        'search_results': [],
+        'id_token': None,
+        'access_token': None,
+        'auth_error': None,
+        'logout_requested': False
+    }
+    
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
-# 新增函数：处理Cognito重定向后的逻辑
-def handle_cognito_redirect():
+def show_login_page():
+    """Display login page"""
+    # Custom CSS
+    st.markdown("""
+        <style>
+        .login-container {
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 2rem;
+            text-align: center;
+        }
+        .login-button {
+            display: block;
+            width: 100%;
+            padding: 12px 24px;
+            background-color: #0066cc;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 16px;
+            text-align: center;
+            transition: background-color 0.3s;
+        }
+        .login-button:hover {
+            background-color: #0052a3;
+            color: white;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    
+    st.title("🕊️ Bird Tagging System")
+    st.markdown("### AI-powered bird identification")
+    
+    st.markdown("---")
+    
+    # Display error message if any
+    if st.session_state.auth_error:
+        st.error(st.session_state.auth_error)
+        st.session_state.auth_error = None
+    
+    # Login button
+    cognito_url = build_cognito_url()
+    
+    st.markdown(
+        f'<a href="{cognito_url}" class="login-button">🔐 Sign in with AWS</a>',
+        unsafe_allow_html=True
+    )
+    
+    # Add force re-login option
+    st.markdown("---")
+    
+    col_login1, col_login2 = st.columns(2)
+    with col_login1:
+        if st.button("🔄 Force Re-login", help="Force login even if you have an active session"):
+            # Build URL with prompt=login to force re-authentication
+            force_login_params = {
+                'response_type': 'code',
+                'client_id': AWS_CONFIG['cognito']['app_client_id'],
+                'redirect_uri': REDIRECT_URI,
+                'scope': 'openid profile email',
+                'prompt': 'login'  # Force login screen
+            }
+            base_url = f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/authorize"
+            force_login_url = f"{base_url}?{urllib.parse.urlencode(force_login_params)}"
+            st.markdown(f'<meta http-equiv="refresh" content="0; url={force_login_url}">', unsafe_allow_html=True)
+            st.stop()
+    
+    with col_login2:
+        if st.button("👥 Switch Account", help="Login with a different account"):
+            # Logout first, then login
+            logout_url = build_cognito_logout_url()
+            st.markdown(f'<meta http-equiv="refresh" content="0; url={logout_url}">', unsafe_allow_html=True)
+            st.stop()
+    
+    st.markdown("---")
+    
+    # Information message
+    st.info("You'll be redirected to AWS Cognito for secure authentication")
+    
+    # Debug information (optional)
+    with st.expander("🔧 Debug Information"):
+        st.code(f"Redirect URI: {REDIRECT_URI}", language=None)
+        st.code(f"Client ID: {AWS_CONFIG['cognito']['app_client_id']}", language=None)
+        if st.button("Copy Login URL"):
+            st.code(cognito_url, language=None)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def build_cognito_url():
+    """Build Cognito authorization URL"""
+    params = {
+        'response_type': 'code',
+        'client_id': AWS_CONFIG['cognito']['app_client_id'],
+        'redirect_uri': REDIRECT_URI,
+        'scope': 'openid profile email'
+    }
+    
+    base_url = f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/authorize"
+    query_string = urllib.parse.urlencode(params)
+    return f"{base_url}?{query_string}"
+
+def build_cognito_logout_url():
+    """Build Cognito logout URL"""
+    params = {
+        'client_id': AWS_CONFIG['cognito']['app_client_id'],
+        'logout_uri': REDIRECT_URI
+    }
+    
+    base_url = f"https://{AWS_CONFIG['cognito']['domain']}/logout"
+    query_string = urllib.parse.urlencode(params)
+    return f"{base_url}?{query_string}"
+
+def handle_cognito_callback():
+    """Handle Cognito callback"""
     query_params = st.query_params
-
-    # 检查URL中是否有授权码
+    
+    # Check if returning from logout
+    if len(query_params) == 0 and st.session_state.get('logout_requested', False):
+        st.session_state.logout_requested = False
+        st.success("Successfully logged out!")
+        return False
+    
+    # Check for errors
+    if 'error' in query_params:
+        st.session_state.auth_error = f"Authentication error: {query_params.get('error_description', 'Unknown error')}"
+        st.query_params.clear()
+        return False
+    
+    # Check for authorization code
     if 'code' in query_params:
         auth_code = query_params['code']
-        st.sidebar.info(f"Received auth code: {auth_code[:10]}...") # 调试用
-
-        # 这里需要执行后端（或者在Streamlit应用中直接）与Cognito Token endpoint的交互
-        # 交换授权码为Token
-        token_endpoint = f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/token"
-
-        # PKCE 验证 (这里简化处理，实际需要生成 code_verifier 和 code_challenge)
-        # 对于 Streamlit，直接在前端处理 PKCE 比较复杂，通常会有一个简单的后端服务来处理
-        # 或者使用 AWS Amplify 等 SDK 来简化。
-        # 为了演示，我们暂时省略 PKCE 的生成和验证，但实际生产环境强烈建议实现。
-        # 简单的非PKCE方式 (不推荐用于SPA):
-
-        data = {
-            'grant_type': 'authorization_code',
-            'client_id': AWS_CONFIG['cognito']['app_client_id'],
-            'code': auth_code,
-            'redirect_uri': REDIRECT_URI
-            # 'code_verifier': st.session_state.pkce_code_verifier # PKCE 需要这个
-        }
-        headers = {
-            'Content-Type': 'application/x-www-form-urlencoded'
-        }
-
+        
         try:
-            token_response = requests.post(token_endpoint, data=urlencode(data), headers=headers)
-            token_response.raise_for_status() # 检查HTTP错误
-            tokens = token_response.json()
-
-            st.session_state.id_token = tokens.get('id_token')
-            st.session_state.access_token = tokens.get('access_token')
-
-            # 解码 ID Token 获取用户信息
-            import jwt # 需要安装 pyjwt: pip install pyjwt
-            decoded_id_token = jwt.decode(st.session_state.id_token, options={"verify_signature": False})
-            st.session_state.user_name = decoded_id_token.get('email', decoded_id_token.get('cognito:username', 'User'))
-
-            st.session_state.authenticated = True
-
-            # 清除URL中的授权码，避免重复处理
-            st.experimental_set_query_params() # Streamlit 1.x / 2.x
-            # st.query_params.clear() # Streamlit 1.18+ (更推荐)
-
-            st.rerun()
-
-        except requests.exceptions.RequestException as e:
-            st.error(f"Error exchanging code for tokens: {e}")
-            st.session_state.authenticated = False
+            # Exchange authorization code for tokens
+            token_endpoint = f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/token"
+            
+            data = {
+                'grant_type': 'authorization_code',
+                'client_id': AWS_CONFIG['cognito']['app_client_id'],
+                'code': auth_code,
+                'redirect_uri': REDIRECT_URI
+            }
+            
+            headers = {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+            
+            response = requests.post(
+                token_endpoint,
+                data=urllib.parse.urlencode(data),
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                tokens = response.json()
+                st.session_state.id_token = tokens.get('id_token')
+                st.session_state.access_token = tokens.get('access_token')
+                
+                # Parse user information - add error handling
+                try:
+                    decoded = jwt.decode(
+                        st.session_state.id_token,
+                        options={"verify_signature": False}
+                    )
+                    
+                    st.session_state.user_name = (
+                        decoded.get('email') or 
+                        decoded.get('cognito:username') or 
+                        'User'
+                    )
+                    st.session_state.authenticated = True
+                    
+                    # Clear URL parameters
+                    st.query_params.clear()
+                    return True
+                    
+                except Exception as jwt_error:
+                    st.session_state.auth_error = f"JWT decode error: {str(jwt_error)}"
+                    st.query_params.clear()
+                    return False
+                    
+            else:
+                st.session_state.auth_error = f"Token exchange failed: {response.text}"
+                st.query_params.clear()
+                return False
+                
         except Exception as e:
-            st.error(f"Authentication failed: {e}")
-            st.session_state.authenticated = False
-    elif 'error' in query_params:
-        st.error(f"Cognito Error: {query_params['error_description']}")
-        st.session_state.authenticated = False
+            st.session_state.auth_error = f"Authentication error: {str(e)}"
+            st.query_params.clear()
+            return False
+    
+    return None
 
-# 认证函数
-def show_login_page():
-    st.title("🕊️ Bird Tagging System")
-    st.markdown("### Automatically identify and tag bird species using AI technology")
-
-    col1, col2, col3 = st.columns([1, 2, 1])
-
-    with col2:
-        st.markdown("---")
-        st.markdown("#### Please sign in to continue")
-
-        # 构建 Cognito 登录 URL
-        cognito_login_url = (
-            f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/authorize?"
-            f"response_type=code&"
-            f"client_id={AWS_CONFIG['cognito']['app_client_id']}&"
-            f"redirect_uri={REDIRECT_URI}&"
-            f"scope=openid%20profile%20email"
-        )
-
-        # 替换 webbrowser.open() 为直接的 HTML 链接
-        # 使用 target="_self" 确保在当前窗口重定向
-        st.markdown(
-            f'<a href="{cognito_login_url}" target="_self">'
-            f'<button style="background-color:#4CAF50;color:white;padding:10px 20px;border:none;cursor:pointer;width:100%;font-size:16px;">'
-            f'🔑 Sign In with AWS Cognito'
-            f'</button>'
-            f'</a>',
-            unsafe_allow_html=True
-        )
-
-        st.markdown("---")
-        st.info(f"📝 You will be redirected to AWS Cognito for authentication. After successful login, you'll be redirected back to: `{REDIRECT_URI}`")
-
-
-# main application
+# Main application
 def show_main_app():
-    # top header
+    # Top header
     col1, col2 = st.columns([3, 1])
     with col1:
         st.title("🕊️ Bird Tagging System")
@@ -163,18 +273,26 @@ def show_main_app():
     
     with col2:
         if st.button("🚪 Logout", type="secondary"):
+            # Clear local session state
             st.session_state.authenticated = False
             st.session_state.user_name = ''
             st.session_state.upload_results = []
             st.session_state.search_results = []
-            st.rerun()
+            st.session_state.id_token = None
+            st.session_state.access_token = None
+            st.session_state.logout_requested = True
+            
+            # Redirect to Cognito logout URL
+            logout_url = build_cognito_logout_url()
+            st.markdown(f'<meta http-equiv="refresh" content="0; url={logout_url}">', unsafe_allow_html=True)
+            st.stop()
     
     st.markdown("---")
     
-    # create main layout
+    # Create main layout
     col1, col2, col3 = st.columns([1, 1, 1])
     
-    # upload section
+    # Upload section
     with col1:
         st.header("📤 Upload Files")
         uploaded_files = st.file_uploader(
@@ -188,14 +306,14 @@ def show_main_app():
             if st.button("🔍 Process Files", type="primary"):
                 process_uploaded_files(uploaded_files)
     
-    # search section
+    # Search section
     with col2:
         st.header("🔍 Search Files")
         
-        # basic search
+        # Basic search
         search_query = st.text_input("Search by species name", placeholder="e.g., crow, pigeon")
         
-        # advanced filters
+        # Advanced filters
         with st.expander("🔧 Advanced Filters"):
             file_type_filter = st.selectbox("File Type", ["All", "Images", "Videos", "Audio"])
             confidence_filter = st.selectbox(
@@ -210,7 +328,7 @@ def show_main_app():
             st.session_state.search_results = []
             st.rerun()
     
-    # statistics section
+    # Statistics section
     with col3:
         st.header("📊 Statistics")
         show_statistics()
@@ -220,10 +338,10 @@ def show_main_app():
     
     st.markdown("---")
     
-    # results section
+    # Results section
     st.header("📋 Results")
     
-    # tabs for results
+    # Tabs for results
     tab1, tab2 = st.tabs(["📤 Upload Results", "🔍 Search Results"])
     
     with tab1:
@@ -232,7 +350,7 @@ def show_main_app():
     with tab2:
         show_search_results()
 
-# handle file uploads and processing
+# Handle file uploads and processing
 def process_uploaded_files(uploaded_files):
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -240,7 +358,7 @@ def process_uploaded_files(uploaded_files):
     results = []
     
     for i, uploaded_file in enumerate(uploaded_files):
-        # display file info
+        # Display file info
         progress = (i + 1) / len(uploaded_files)
         progress_bar.progress(progress)
         status_text.text(f"Processing {uploaded_file.name}...")
@@ -276,14 +394,14 @@ def process_uploaded_files(uploaded_files):
         except Exception as e:
             st.error(f"An error occurred: {e}")
         
-        # generate a mock result
+        # Generate a mock result
         result = simulate_ai_detection(uploaded_file)
         results.append(result)
     
-    # store results in session state
+    # Store results in session state
     st.session_state.upload_results.extend(results)
     
-    # complete processing
+    # Complete processing
     progress_bar.progress(1.0)
     status_text.text("✅ Processing complete!")
     
@@ -291,16 +409,16 @@ def process_uploaded_files(uploaded_files):
     time.sleep(1)
     st.rerun()
 
-# simulate AI detection
+# Simulate AI detection
 def simulate_ai_detection(uploaded_file):
-    # simulate species detection
+    # Simulate species detection
     species_list = ['Crow', 'Pigeon', 'Sparrow', 'Robin', 'Cardinal', 'Blue Jay', 'Eagle', 'Owl']
     detected_species = species_list[hash(uploaded_file.name) % len(species_list)]
     
-    # simulate confidence score
+    # Simulate confidence score
     confidence = 0.75 + (hash(uploaded_file.name) % 25) / 100
     
-    # simulate count of detected birds
+    # Simulate count of detected birds
     count = (hash(uploaded_file.name) % 3) + 1
     
     return {
@@ -311,10 +429,10 @@ def simulate_ai_detection(uploaded_file):
         'confidence': confidence,
         'count': count,
         'timestamp': datetime.now(),
-        'file_data': uploaded_file.read()  # store file data for preview
+        'file_data': uploaded_file.read()  # Store file data for preview
     }
 
-# serch files based on query and filters
+# Search files based on query and filters
 def search_files(query, file_type_filter, confidence_filter):
     if not query.strip():
         st.warning("Please enter a search term")
@@ -323,17 +441,17 @@ def search_files(query, file_type_filter, confidence_filter):
     with st.spinner("Searching..."):
         time.sleep(1)
         
-        # search in uploaded results
+        # Search in uploaded results
         search_results = []
         for result in st.session_state.upload_results:
             if query.lower() in result['species'].lower():
                 search_results.append(result)
         
-        # mock search results
+        # Mock search results
         mock_results = generate_mock_search_results(query)
         search_results.extend(mock_results)
         
-        # filter results based on file type and confidence
+        # Filter results based on file type and confidence
         if file_type_filter != "All":
             if file_type_filter == "Images":
                 search_results = [r for r in search_results if r['file_type'].startswith('image/')]
@@ -355,7 +473,7 @@ def search_files(query, file_type_filter, confidence_filter):
         
     st.success(f"Found {len(search_results)} result(s) for '{query}'")
 
-# generate mock search results
+# Generate mock search results
 def generate_mock_search_results(query):
     mock_database = [
         {'file_name': 'crow_flock.jpg', 'species': 'Crow', 'confidence': 0.95, 'count': 3, 'file_type': 'image/jpeg'},
@@ -371,12 +489,12 @@ def generate_mock_search_results(query):
             results.append({
                 **item,
                 'timestamp': datetime.now(),
-                'file_data': None # no file data for mock results
+                'file_data': None  # No file data for mock results
             })
     
     return results
 
-# display upload results
+# Display upload results
 def show_upload_results():
     if not st.session_state.upload_results:
         st.info("📝 Upload files to see identification results here")
@@ -389,7 +507,7 @@ def show_upload_results():
             col1, col2 = st.columns([1, 2])
             
             with col1:
-                # display file preview
+                # Display file preview
                 if result['file_type'].startswith('image/') and result.get('file_data'):
                     try:
                         image = Image.open(io.BytesIO(result['file_data']))
@@ -414,7 +532,7 @@ def show_upload_results():
                     if st.button(f"📤 Share", key=f"share_{i}"):
                         st.info("Share feature coming soon!")
 
-# display search results
+# Display search results
 def show_search_results():
     if not st.session_state.search_results:
         st.info("🔍 Use the search function to find files")
@@ -422,7 +540,7 @@ def show_search_results():
     
     st.subheader(f"🔍 {len(st.session_state.search_results)} Search Result(s)")
     
-    # create a DataFrame for search results
+    # Create a DataFrame for search results
     df_data = []
     for result in st.session_state.search_results:
         df_data.append({
@@ -437,7 +555,7 @@ def show_search_results():
     df = pd.DataFrame(df_data)
     st.dataframe(df, use_container_width=True)
     
-    # detailed view
+    # Detailed view
     st.subheader("📋 Detailed View")
     for i, result in enumerate(st.session_state.search_results):
         with st.expander(f"📁 {result['file_name']}"):
@@ -449,7 +567,7 @@ def show_search_results():
                 st.metric("Count", result['count'])
                 st.metric("File Type", get_file_type_display(result['file_type']))
 
-# display statistics
+# Display statistics
 def show_statistics():
     total_files = len(st.session_state.upload_results)
     
@@ -457,7 +575,7 @@ def show_statistics():
         st.info("📊 Upload files to see statistics")
         return
     
-    # basic statistics
+    # Basic statistics
     species_count = {}
     total_detections = 0
     high_confidence_count = 0
@@ -470,7 +588,7 @@ def show_statistics():
         if result['confidence'] >= 0.9:
             high_confidence_count += 1
     
-    # display summary statistics
+    # Display summary statistics
     col1, col2 = st.columns(2)
     with col1:
         st.metric("Total Files", total_files)
@@ -480,12 +598,12 @@ def show_statistics():
         st.metric("Unique Species", len(species_count))
         st.metric("High Confidence", f"{high_confidence_count}/{total_files}")
     
-    # most common species
+    # Most common species
     if species_count:
         most_common = max(species_count.items(), key=lambda x: x[1])
         st.metric("Most Common", f"{most_common[0]} ({most_common[1]})")
 
-# display detailed statistics
+# Display detailed statistics
 def show_detailed_statistics():
     st.subheader("📊 Detailed Statistics")
     
@@ -506,11 +624,11 @@ def show_detailed_statistics():
         # Confidence distribution
         confidence_data.append(result['confidence'])
         
-        # file type statistics
+        # File type statistics
         file_type = get_file_type_display(result['file_type'])
         file_type_data[file_type] = file_type_data.get(file_type, 0) + 1
     
-    # create bar charts for species and file types
+    # Create bar charts for species and file types
     col1, col2 = st.columns(2)
     
     with col1:
@@ -531,7 +649,7 @@ def show_detailed_statistics():
         confidence_df = pd.DataFrame({'Confidence': confidence_data})
         st.histogram(confidence_df['Confidence'], bins=20)
     
-    # output report
+    # Generate report
     if st.button("📥 Download Report"):
         report_data = {
             'summary': {
@@ -561,7 +679,7 @@ def show_detailed_statistics():
             mime="application/json"
         )
 
-# tools for file type handling
+# Utility functions for file type handling
 def get_file_type_emoji(file_type):
     if file_type.startswith('image/'):
         return '🖼️'
@@ -593,20 +711,23 @@ def format_file_size(size_bytes):
     
     return f"{size_bytes:.1f} TB"
 
-# 主函数
 def main():
+    """Main function"""
     init_session_state()
-
-    # 检查是否是Cognito重定向回来的URL
-    if 'authenticated' not in st.session_state or not st.session_state.authenticated:
-        # 如果是Cognito重定向回来，处理授权码
-        query_params = st.query_params
-        if 'code' in query_params or 'error' in query_params:
-            handle_cognito_redirect()
-        else:
-            show_login_page()
-    else:
+    
+    # Handle Cognito callback
+    callback_result = handle_cognito_callback()
+    
+    if callback_result is True:
+        st.success("Successfully authenticated!")
+        time.sleep(1)
+        st.rerun()
+    
+    # Display application
+    if st.session_state.authenticated:
         show_main_app()
+    else:
+        show_login_page()
 
 if __name__ == "__main__":
     main()

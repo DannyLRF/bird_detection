@@ -3,7 +3,7 @@ import sys
 
 # Set environment variables before importing other libraries
 os.environ['NUMBA_CACHE_DIR'] = '/tmp'
-os.environ['NUMBA_DISABLE_JIT'] = '1'
+# os.environ['NUMBA_DISABLE_JIT'] = '1'
 os.environ['LIBROSA_CACHE_DIR'] = '/tmp'
 
 import json
@@ -11,27 +11,41 @@ import boto3
 import base64
 import tempfile
 import numpy as np
-import librosa
 from pathlib import Path
 import logging
 import tensorflow as tf
+import uuid
+import re
+import soundfile as sf
+from collections import Counter
+from decimal import Decimal
+from pathlib import Path
 from urllib.parse import unquote_plus
+from scipy.signal import resample
 
 # Set up logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+TABLE_NAME = "BirdTagsData"
+dynamodb = boto3.resource("dynamodb")
+table = dynamodb.Table(TABLE_NAME)
+
 class AudioProcessor:
-    """Lightweight audio processing tool"""
-    
     @staticmethod
     def load_audio(file_path, target_sr=48000):
-        """Load audio file"""
+        """Load audio using soundfile, resample using scipy"""
         try:
-            # Load using librosa
-            audio, sr = librosa.load(file_path, sr=target_sr, mono=True)
-            return audio.astype(np.float32), target_sr
+            audio, sr = sf.read(file_path)
+            if audio.ndim > 1:
+                audio = audio.mean(axis=1)  # convert to mono
             
+            if sr != target_sr:
+                duration = len(audio) / sr
+                target_length = int(duration * target_sr)
+                audio = resample(audio, target_length)
+            
+            return audio.astype(np.float32), target_sr
         except Exception as e:
             logger.error(f"Audio loading failed: {e}")
             raise
@@ -53,6 +67,51 @@ class AudioProcessor:
                 segments.append(padded_segment)
         
         return np.array(segments)
+    
+SIMPLIFIED_LABELS = ["Crow", "Kingfisher", "Myna", "Owl", "Peacock", "Pigeon", "Sparrow"]
+    
+def simplify_species_name(full_name):
+    common_name = full_name.split('_')[-1].strip().lower()
+    for label in SIMPLIFIED_LABELS:
+        if re.search(rf"\b{label.lower()}\b", common_name):
+            return label
+    return None
+
+def store_predictions_to_dynamodb_audio(prediction_result):
+    logger.info("Storing audio predictions to DynamoDB...")
+    file_key = prediction_result["file"]
+    bucket = prediction_result["bucket"]
+    filename = Path(file_key).name
+    predictions = prediction_result["predictions"]
+    
+    detected_labels = set()
+
+    for p in predictions:
+        simplified = simplify_species_name(p["species"])
+        if simplified:
+            detected_labels.add(simplified)
+
+    if not detected_labels:
+        logger.info("No relevant bird species detected, skipping DynamoDB storage.")
+        return
+    
+    file_id = str(uuid.uuid4())
+    s3_base = f"s3://{bucket}"
+    
+    item = {
+        "file_id": file_id,
+        "annotated_s3_url": f"{s3_base}/annotated/audio/{Path(filename).stem}_predictions.json",
+        "detected_birds": [
+            {"label": label, "count": 1} for label in detected_labels
+        ],
+        "file_type": "audio",
+        "original_s3_url": f"{s3_base}/{file_key}",
+        "thumbnail_s3_url": None
+    }
+
+    logger.info(f"Storing item in DynamoDB: {item}")
+    table.put_item(Item=item)
+    logger.info(f"Stored audio prediction for {filename} in DynamoDB.")
 
 class BirdNETPredictor:
     def __init__(self):
@@ -299,6 +358,7 @@ def lambda_handler(event, context):
                     # Save prediction results to S3
                     try:
                         output_s3_path = predictor._save_predictions_to_s3(result, object_key)
+                        store_predictions_to_dynamodb_audio(result)
                         result['output_s3_path'] = output_s3_path
                     except Exception as e:
                         logger.error(f"Unable to save prediction results to S3: {e}")
@@ -382,6 +442,7 @@ def lambda_handler(event, context):
             # For simplicity, we assume it's a fixed name, or get it from event (if exists)
             original_file_identifier = body.get('filename', 'uploaded_audio.wav') # Assume API call can provide filename
             output_s3_path = predictor._save_predictions_to_s3(result, original_file_identifier)
+            store_predictions_to_dynamodb_audio(result)
             result['output_s3_path'] = output_s3_path
         except Exception as e:
             logger.error(f"Unable to save prediction results for directly uploaded audio to S3: {e}")
