@@ -121,7 +121,6 @@ def handle_cognito_redirect():
         st.error(f"Cognito Error: {query_params['error_description']}")
         st.session_state.authenticated = False
 
-# 认证函数
 def show_login_page():
     st.title("🕊️ Bird Tagging System")
     st.markdown("### Automatically identify and tag bird species using AI technology")
@@ -133,28 +132,39 @@ def show_login_page():
         st.markdown("#### Please sign in to continue")
 
         # 构建 Cognito 登录 URL
-        cognito_login_url = (
-            f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/authorize?"
-            f"response_type=code&"
-            f"client_id={AWS_CONFIG['cognito']['app_client_id']}&"
-            f"redirect_uri={REDIRECT_URI}&"
-            f"scope=openid%20profile%20email"
-        )
+        cognito_login_url = build_cognito_url()
 
-        # 替换 webbrowser.open() 为直接的 HTML 链接
-        # 使用 target="_self" 确保在当前窗口重定向
-        st.markdown(
-            f'<a href="{cognito_login_url}" target="_self">'
-            f'<button style="background-color:#4CAF50;color:white;padding:10px 20px;border:none;cursor:pointer;width:100%;font-size:16px;">'
-            f'🔑 Sign In with AWS Cognito'
-            f'</button>'
-            f'</a>',
-            unsafe_allow_html=True
-        )
+        # 方法1：使用 link_button（推荐）
+        try:
+            st.link_button(
+                "🔑 Sign In with AWS Cognito",
+                cognito_login_url,
+                use_container_width=True
+            )
+        except AttributeError:
+            # 如果 Streamlit 版本不支持 link_button
+            if st.button("🔑 Sign In with AWS Cognito", use_container_width=True):
+                st.write(f'<meta http-equiv="refresh" content="0; url={cognito_login_url}">', 
+                        unsafe_allow_html=True)
 
         st.markdown("---")
-        st.info(f"📝 You will be redirected to AWS Cognito for authentication. After successful login, you'll be redirected back to: `{REDIRECT_URI}`")
+        st.info("📝 You will be redirected to AWS Cognito for authentication.")
 
+def build_cognito_url():
+    """构建正确编码的 Cognito URL"""
+    import urllib.parse
+    
+    params = {
+        'response_type': 'code',
+        'client_id': AWS_CONFIG['cognito']['app_client_id'],
+        'redirect_uri': REDIRECT_URI,
+        'scope': 'openid profile email',
+        # 可选：添加 state 参数增加安全性
+        'state': secrets.token_urlsafe(32)
+    }
+    
+    base_url = f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/authorize"
+    return f"{base_url}?{urllib.parse.urlencode(params)}"
 
 # main application
 def show_main_app():
