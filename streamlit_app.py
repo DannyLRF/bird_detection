@@ -16,14 +16,14 @@ import secrets
 import urllib.parse
 from datetime import datetime
 
-# 添加 JWT 导入和错误处理
+# Add JWT import and error handling
 try:
     import jwt
 except ImportError:
     st.error("Missing required dependency: PyJWT. Please install it with: pip install PyJWT")
     st.stop()
 
-# 页面配置
+# Page configuration
 st.set_page_config(
     page_title="Bird Tagging System",
     page_icon="🕊️",
@@ -31,7 +31,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# AWS配置
+# AWS configuration
 AWS_CONFIG = {
     'region': 'ap-southeast-2',
     'cognito': {
@@ -49,9 +49,9 @@ AWS_CONFIG = {
 # Also, ensure this URL is added to your Cognito User Pool App Client's Callback URLs.
 REDIRECT_URI = "https://99-birddetection.streamlit.app/"
 
-# initialize session state
+# Initialize session state
 def init_session_state():
-    """初始化 session state"""
+    """Initialize session state variables"""
     defaults = {
         'authenticated': False,
         'user_name': '',
@@ -59,7 +59,8 @@ def init_session_state():
         'search_results': [],
         'id_token': None,
         'access_token': None,
-        'auth_error': None
+        'auth_error': None,
+        'logout_requested': False
     }
     
     for key, value in defaults.items():
@@ -67,8 +68,8 @@ def init_session_state():
             st.session_state[key] = value
 
 def show_login_page():
-    """显示登录页面"""
-    # 自定义CSS
+    """Display login page"""
+    # Custom CSS
     st.markdown("""
         <style>
         .login-container {
@@ -104,12 +105,12 @@ def show_login_page():
     
     st.markdown("---")
     
-    # 显示错误信息（如果有）
+    # Display error message if any
     if st.session_state.auth_error:
         st.error(st.session_state.auth_error)
         st.session_state.auth_error = None
     
-    # 登录按钮
+    # Login button
     cognito_url = build_cognito_url()
     
     st.markdown(
@@ -117,12 +118,38 @@ def show_login_page():
         unsafe_allow_html=True
     )
     
+    # Add force re-login option
     st.markdown("---")
     
-    # 信息提示
+    col_login1, col_login2 = st.columns(2)
+    with col_login1:
+        if st.button("🔄 Force Re-login", help="Force login even if you have an active session"):
+            # Build URL with prompt=login to force re-authentication
+            force_login_params = {
+                'response_type': 'code',
+                'client_id': AWS_CONFIG['cognito']['app_client_id'],
+                'redirect_uri': REDIRECT_URI,
+                'scope': 'openid profile email',
+                'prompt': 'login'  # Force login screen
+            }
+            base_url = f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/authorize"
+            force_login_url = f"{base_url}?{urllib.parse.urlencode(force_login_params)}"
+            st.markdown(f'<meta http-equiv="refresh" content="0; url={force_login_url}">', unsafe_allow_html=True)
+            st.stop()
+    
+    with col_login2:
+        if st.button("👥 Switch Account", help="Login with a different account"):
+            # Logout first, then login
+            logout_url = build_cognito_logout_url()
+            st.markdown(f'<meta http-equiv="refresh" content="0; url={logout_url}">', unsafe_allow_html=True)
+            st.stop()
+    
+    st.markdown("---")
+    
+    # Information message
     st.info("You'll be redirected to AWS Cognito for secure authentication")
     
-    # 调试信息（可选）
+    # Debug information (optional)
     with st.expander("🔧 Debug Information"):
         st.code(f"Redirect URI: {REDIRECT_URI}", language=None)
         st.code(f"Client ID: {AWS_CONFIG['cognito']['app_client_id']}", language=None)
@@ -132,7 +159,7 @@ def show_login_page():
     st.markdown('</div>', unsafe_allow_html=True)
 
 def build_cognito_url():
-    """构建 Cognito 授权 URL"""
+    """Build Cognito authorization URL"""
     params = {
         'response_type': 'code',
         'client_id': AWS_CONFIG['cognito']['app_client_id'],
@@ -144,22 +171,39 @@ def build_cognito_url():
     query_string = urllib.parse.urlencode(params)
     return f"{base_url}?{query_string}"
 
+def build_cognito_logout_url():
+    """Build Cognito logout URL"""
+    params = {
+        'client_id': AWS_CONFIG['cognito']['app_client_id'],
+        'logout_uri': REDIRECT_URI
+    }
+    
+    base_url = f"https://{AWS_CONFIG['cognito']['domain']}/logout"
+    query_string = urllib.parse.urlencode(params)
+    return f"{base_url}?{query_string}"
+
 def handle_cognito_callback():
-    """处理 Cognito 回调"""
+    """Handle Cognito callback"""
     query_params = st.query_params
     
-    # 检查是否有错误
+    # Check if returning from logout
+    if len(query_params) == 0 and st.session_state.get('logout_requested', False):
+        st.session_state.logout_requested = False
+        st.success("Successfully logged out!")
+        return False
+    
+    # Check for errors
     if 'error' in query_params:
         st.session_state.auth_error = f"Authentication error: {query_params.get('error_description', 'Unknown error')}"
         st.query_params.clear()
         return False
     
-    # 检查是否有授权码
+    # Check for authorization code
     if 'code' in query_params:
         auth_code = query_params['code']
         
         try:
-            # 交换授权码为令牌
+            # Exchange authorization code for tokens
             token_endpoint = f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/token"
             
             data = {
@@ -184,7 +228,7 @@ def handle_cognito_callback():
                 st.session_state.id_token = tokens.get('id_token')
                 st.session_state.access_token = tokens.get('access_token')
                 
-                # 解析用户信息 - 添加错误处理
+                # Parse user information - add error handling
                 try:
                     decoded = jwt.decode(
                         st.session_state.id_token,
@@ -198,7 +242,7 @@ def handle_cognito_callback():
                     )
                     st.session_state.authenticated = True
                     
-                    # 清除 URL 参数
+                    # Clear URL parameters
                     st.query_params.clear()
                     return True
                     
@@ -219,9 +263,9 @@ def handle_cognito_callback():
     
     return None
 
-# main application
+# Main application
 def show_main_app():
-    # top header
+    # Top header
     col1, col2 = st.columns([3, 1])
     with col1:
         st.title("🕊️ Bird Tagging System")
@@ -229,18 +273,26 @@ def show_main_app():
     
     with col2:
         if st.button("🚪 Logout", type="secondary"):
+            # Clear local session state
             st.session_state.authenticated = False
             st.session_state.user_name = ''
             st.session_state.upload_results = []
             st.session_state.search_results = []
-            st.rerun()
+            st.session_state.id_token = None
+            st.session_state.access_token = None
+            st.session_state.logout_requested = True
+            
+            # Redirect to Cognito logout URL
+            logout_url = build_cognito_logout_url()
+            st.markdown(f'<meta http-equiv="refresh" content="0; url={logout_url}">', unsafe_allow_html=True)
+            st.stop()
     
     st.markdown("---")
     
-    # create main layout
+    # Create main layout
     col1, col2, col3 = st.columns([1, 1, 1])
     
-    # upload section
+    # Upload section
     with col1:
         st.header("📤 Upload Files")
         uploaded_files = st.file_uploader(
@@ -254,14 +306,14 @@ def show_main_app():
             if st.button("🔍 Process Files", type="primary"):
                 process_uploaded_files(uploaded_files)
     
-    # search section
+    # Search section
     with col2:
         st.header("🔍 Search Files")
         
-        # basic search
+        # Basic search
         search_query = st.text_input("Search by species name", placeholder="e.g., crow, pigeon")
         
-        # advanced filters
+        # Advanced filters
         with st.expander("🔧 Advanced Filters"):
             file_type_filter = st.selectbox("File Type", ["All", "Images", "Videos", "Audio"])
             confidence_filter = st.selectbox(
@@ -276,7 +328,7 @@ def show_main_app():
             st.session_state.search_results = []
             st.rerun()
     
-    # statistics section
+    # Statistics section
     with col3:
         st.header("📊 Statistics")
         show_statistics()
@@ -286,10 +338,10 @@ def show_main_app():
     
     st.markdown("---")
     
-    # results section
+    # Results section
     st.header("📋 Results")
     
-    # tabs for results
+    # Tabs for results
     tab1, tab2 = st.tabs(["📤 Upload Results", "🔍 Search Results"])
     
     with tab1:
@@ -298,7 +350,7 @@ def show_main_app():
     with tab2:
         show_search_results()
 
-# handle file uploads and processing
+# Handle file uploads and processing
 def process_uploaded_files(uploaded_files):
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -306,7 +358,7 @@ def process_uploaded_files(uploaded_files):
     results = []
     
     for i, uploaded_file in enumerate(uploaded_files):
-        # display file info
+        # Display file info
         progress = (i + 1) / len(uploaded_files)
         progress_bar.progress(progress)
         status_text.text(f"Processing {uploaded_file.name}...")
@@ -342,14 +394,14 @@ def process_uploaded_files(uploaded_files):
         except Exception as e:
             st.error(f"An error occurred: {e}")
         
-        # generate a mock result
+        # Generate a mock result
         result = simulate_ai_detection(uploaded_file)
         results.append(result)
     
-    # store results in session state
+    # Store results in session state
     st.session_state.upload_results.extend(results)
     
-    # complete processing
+    # Complete processing
     progress_bar.progress(1.0)
     status_text.text("✅ Processing complete!")
     
@@ -357,16 +409,16 @@ def process_uploaded_files(uploaded_files):
     time.sleep(1)
     st.rerun()
 
-# simulate AI detection
+# Simulate AI detection
 def simulate_ai_detection(uploaded_file):
-    # simulate species detection
+    # Simulate species detection
     species_list = ['Crow', 'Pigeon', 'Sparrow', 'Robin', 'Cardinal', 'Blue Jay', 'Eagle', 'Owl']
     detected_species = species_list[hash(uploaded_file.name) % len(species_list)]
     
-    # simulate confidence score
+    # Simulate confidence score
     confidence = 0.75 + (hash(uploaded_file.name) % 25) / 100
     
-    # simulate count of detected birds
+    # Simulate count of detected birds
     count = (hash(uploaded_file.name) % 3) + 1
     
     return {
@@ -377,10 +429,10 @@ def simulate_ai_detection(uploaded_file):
         'confidence': confidence,
         'count': count,
         'timestamp': datetime.now(),
-        'file_data': uploaded_file.read()  # store file data for preview
+        'file_data': uploaded_file.read()  # Store file data for preview
     }
 
-# search files based on query and filters
+# Search files based on query and filters
 def search_files(query, file_type_filter, confidence_filter):
     if not query.strip():
         st.warning("Please enter a search term")
@@ -389,17 +441,17 @@ def search_files(query, file_type_filter, confidence_filter):
     with st.spinner("Searching..."):
         time.sleep(1)
         
-        # search in uploaded results
+        # Search in uploaded results
         search_results = []
         for result in st.session_state.upload_results:
             if query.lower() in result['species'].lower():
                 search_results.append(result)
         
-        # mock search results
+        # Mock search results
         mock_results = generate_mock_search_results(query)
         search_results.extend(mock_results)
         
-        # filter results based on file type and confidence
+        # Filter results based on file type and confidence
         if file_type_filter != "All":
             if file_type_filter == "Images":
                 search_results = [r for r in search_results if r['file_type'].startswith('image/')]
@@ -421,7 +473,7 @@ def search_files(query, file_type_filter, confidence_filter):
         
     st.success(f"Found {len(search_results)} result(s) for '{query}'")
 
-# generate mock search results
+# Generate mock search results
 def generate_mock_search_results(query):
     mock_database = [
         {'file_name': 'crow_flock.jpg', 'species': 'Crow', 'confidence': 0.95, 'count': 3, 'file_type': 'image/jpeg'},
@@ -437,12 +489,12 @@ def generate_mock_search_results(query):
             results.append({
                 **item,
                 'timestamp': datetime.now(),
-                'file_data': None # no file data for mock results
+                'file_data': None  # No file data for mock results
             })
     
     return results
 
-# display upload results
+# Display upload results
 def show_upload_results():
     if not st.session_state.upload_results:
         st.info("📝 Upload files to see identification results here")
@@ -455,7 +507,7 @@ def show_upload_results():
             col1, col2 = st.columns([1, 2])
             
             with col1:
-                # display file preview
+                # Display file preview
                 if result['file_type'].startswith('image/') and result.get('file_data'):
                     try:
                         image = Image.open(io.BytesIO(result['file_data']))
@@ -480,7 +532,7 @@ def show_upload_results():
                     if st.button(f"📤 Share", key=f"share_{i}"):
                         st.info("Share feature coming soon!")
 
-# display search results
+# Display search results
 def show_search_results():
     if not st.session_state.search_results:
         st.info("🔍 Use the search function to find files")
@@ -488,7 +540,7 @@ def show_search_results():
     
     st.subheader(f"🔍 {len(st.session_state.search_results)} Search Result(s)")
     
-    # create a DataFrame for search results
+    # Create a DataFrame for search results
     df_data = []
     for result in st.session_state.search_results:
         df_data.append({
@@ -503,7 +555,7 @@ def show_search_results():
     df = pd.DataFrame(df_data)
     st.dataframe(df, use_container_width=True)
     
-    # detailed view
+    # Detailed view
     st.subheader("📋 Detailed View")
     for i, result in enumerate(st.session_state.search_results):
         with st.expander(f"📁 {result['file_name']}"):
@@ -515,7 +567,7 @@ def show_search_results():
                 st.metric("Count", result['count'])
                 st.metric("File Type", get_file_type_display(result['file_type']))
 
-# display statistics
+# Display statistics
 def show_statistics():
     total_files = len(st.session_state.upload_results)
     
@@ -523,7 +575,7 @@ def show_statistics():
         st.info("📊 Upload files to see statistics")
         return
     
-    # basic statistics
+    # Basic statistics
     species_count = {}
     total_detections = 0
     high_confidence_count = 0
@@ -536,7 +588,7 @@ def show_statistics():
         if result['confidence'] >= 0.9:
             high_confidence_count += 1
     
-    # display summary statistics
+    # Display summary statistics
     col1, col2 = st.columns(2)
     with col1:
         st.metric("Total Files", total_files)
@@ -546,12 +598,12 @@ def show_statistics():
         st.metric("Unique Species", len(species_count))
         st.metric("High Confidence", f"{high_confidence_count}/{total_files}")
     
-    # most common species
+    # Most common species
     if species_count:
         most_common = max(species_count.items(), key=lambda x: x[1])
         st.metric("Most Common", f"{most_common[0]} ({most_common[1]})")
 
-# display detailed statistics
+# Display detailed statistics
 def show_detailed_statistics():
     st.subheader("📊 Detailed Statistics")
     
@@ -572,11 +624,11 @@ def show_detailed_statistics():
         # Confidence distribution
         confidence_data.append(result['confidence'])
         
-        # file type statistics
+        # File type statistics
         file_type = get_file_type_display(result['file_type'])
         file_type_data[file_type] = file_type_data.get(file_type, 0) + 1
     
-    # create bar charts for species and file types
+    # Create bar charts for species and file types
     col1, col2 = st.columns(2)
     
     with col1:
@@ -597,7 +649,7 @@ def show_detailed_statistics():
         confidence_df = pd.DataFrame({'Confidence': confidence_data})
         st.histogram(confidence_df['Confidence'], bins=20)
     
-    # output report
+    # Generate report
     if st.button("📥 Download Report"):
         report_data = {
             'summary': {
@@ -627,7 +679,7 @@ def show_detailed_statistics():
             mime="application/json"
         )
 
-# tools for file type handling
+# Utility functions for file type handling
 def get_file_type_emoji(file_type):
     if file_type.startswith('image/'):
         return '🖼️'
@@ -660,10 +712,10 @@ def format_file_size(size_bytes):
     return f"{size_bytes:.1f} TB"
 
 def main():
-    """主函数"""
+    """Main function"""
     init_session_state()
     
-    # 处理 Cognito 回调
+    # Handle Cognito callback
     callback_result = handle_cognito_callback()
     
     if callback_result is True:
@@ -671,7 +723,7 @@ def main():
         time.sleep(1)
         st.rerun()
     
-    # 显示应用
+    # Display application
     if st.session_state.authenticated:
         show_main_app()
     else:
