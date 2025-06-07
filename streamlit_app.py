@@ -14,6 +14,8 @@ import webbrowser # 新增导入
 import hashlib
 import secrets
 import urllib.parse
+from datetime import datetime
+
 
 # 页面配置
 st.set_page_config(
@@ -25,17 +27,14 @@ st.set_page_config(
 
 # AWS配置
 AWS_CONFIG = {
-    'region': 'ap-southeast-2', # 修改为您的AWS地区
+    'region': 'ap-southeast-2',
     'cognito': {
-        'user_pool_id': 'ap-southeast-2_3O9qdhhLL', # 替换为您的用户池ID，例如 ap-southeast-2_your_pool_id_suffix
-        'app_client_id': '2lio1ipeg3tabimmqlmtuii1um', # 替换为您的App Client ID
-        'domain': 'ap-southeast-23o9qdhhll.auth.ap-southeast-2.amazoncognito.com' # 替换为您的Cognito域名前缀，例如 your-app-name
-    },
-    'api_gateway': {
-        'base_url': 'https://xxxxxxxxxx.execute-api.ap-southeast-2.amazonaws.com/dev' # 保持不变，除非API Gateway也在ap-southeast-2
+        'user_pool_id': 'ap-southeast-2_3O9qdhhLL',
+        'app_client_id': '2lio1ipeg3tabimmqlmtuii1um',
+        'domain': 'ap-southeast-23o9qdhhll.auth.ap-southeast-2.amazoncognito.com'
     },
     's3': {
-        'bucket_name': 'team99-uploaded-files' # 保持不变，除非S3桶名有变化
+        'bucket_name': 'team99-uploaded-files'
     }
 }
 
@@ -47,18 +46,20 @@ REDIRECT_URI = "https://99-birddetection.streamlit.app/" # Streamlit 默认本�
 # initialize session state
 # 初始化session state
 def init_session_state():
-    if 'authenticated' not in st.session_state:
-        st.session_state.authenticated = False
-    if 'user_name' not in st.session_state:
-        st.session_state.user_name = ''
-    if 'upload_results' not in st.session_state:
-        st.session_state.upload_results = []
-    if 'search_results' not in st.session_state:
-        st.session_state.search_results = []
-    if 'id_token' not in st.session_state: # 新增：存储ID Token
-        st.session_state.id_token = None
-    if 'access_token' not in st.session_state: # 新增：存储Access Token
-        st.session_state.access_token = None
+    """初始化 session state"""
+    defaults = {
+        'authenticated': False,
+        'user_name': '',
+        'upload_results': [],
+        'search_results': [],
+        'id_token': None,
+        'access_token': None,
+        'auth_error': None
+    }
+    
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 # 新增函数：处理Cognito重定向后的逻辑
 def handle_cognito_redirect():
@@ -122,52 +123,153 @@ def handle_cognito_redirect():
         st.session_state.authenticated = False
 
 def show_login_page():
+    """显示登录页面"""
+    # 自定义CSS
+    st.markdown("""
+        <style>
+        .login-container {
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 2rem;
+            text-align: center;
+        }
+        .login-button {
+            display: block;
+            width: 100%;
+            padding: 12px 24px;
+            background-color: #0066cc;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 16px;
+            text-align: center;
+            transition: background-color 0.3s;
+        }
+        .login-button:hover {
+            background-color: #0052a3;
+            color: white;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    
     st.title("🕊️ Bird Tagging System")
-    st.markdown("### Automatically identify and tag bird species using AI technology")
-
-    col1, col2, col3 = st.columns([1, 2, 1])
-
-    with col2:
-        st.markdown("---")
-        st.markdown("#### Please sign in to continue")
-
-        cognito_login_url = build_cognito_url()
-
-        # 显示登录按钮
-        if st.button("🔑 Sign In with AWS Cognito", type="primary", use_container_width=True):
-            # 显示加载信息
-            st.info("🔄 Redirecting to AWS Cognito...")
-            
-            # 使用 JavaScript 重定向到顶层窗口
-            redirect_script = f"""
-                <script>
-                    window.top.location.href = "{cognito_login_url}";
-                </script>
-            """
-            st.components.v1.html(redirect_script, height=0)
-
-        st.markdown("---")
-        
-        with st.expander("ℹ️ Login Information"):
-            st.info(
-                "You will be redirected to AWS Cognito for secure authentication. "
-                "After successful login, you'll be redirected back to this application."
-            )
-            st.caption(f"Redirect URL: `{REDIRECT_URI}`")
+    st.markdown("### AI-powered bird identification")
+    
+    st.markdown("---")
+    
+    # 显示错误信息（如果有）
+    if st.session_state.auth_error:
+        st.error(st.session_state.auth_error)
+        st.session_state.auth_error = None
+    
+    # 登录按钮
+    cognito_url = build_cognito_url()
+    
+    st.markdown(
+        f'<a href="{cognito_url}" class="login-button">🔐 Sign in with AWS</a>',
+        unsafe_allow_html=True
+    )
+    
+    st.markdown("---")
+    
+    # 信息提示
+    st.info("You'll be redirected to AWS Cognito for secure authentication")
+    
+    # 调试信息（可选）
+    with st.expander("🔧 Debug Information"):
+        st.code(f"Redirect URI: {REDIRECT_URI}", language=None)
+        st.code(f"Client ID: {AWS_CONFIG['cognito']['app_client_id']}", language=None)
+        if st.button("Copy Login URL"):
+            st.code(cognito_url, language=None)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def build_cognito_url():
-    """构建正确编码的 Cognito URL"""
-    import urllib.parse
-    
+    """构建 Cognito 授权 URL"""
     params = {
         'response_type': 'code',
         'client_id': AWS_CONFIG['cognito']['app_client_id'],
         'redirect_uri': REDIRECT_URI,
-        'scope': 'openid profile email',
+        'scope': 'openid profile email'
     }
     
     base_url = f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/authorize"
-    return f"{base_url}?{urllib.parse.urlencode(params)}"
+    query_string = urllib.parse.urlencode(params)
+    return f"{base_url}?{query_string}"
+
+def handle_cognito_callback():
+    """处理 Cognito 回调"""
+    query_params = st.query_params
+    
+    # 检查是否有错误
+    if 'error' in query_params:
+        st.session_state.auth_error = f"Authentication error: {query_params.get('error_description', 'Unknown error')}"
+        st.query_params.clear()
+        return False
+    
+    # 检查是否有授权码
+    if 'code' in query_params:
+        auth_code = query_params['code']
+        
+        try:
+            # 交换授权码为令牌
+            import requests
+            
+            token_endpoint = f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/token"
+            
+            data = {
+                'grant_type': 'authorization_code',
+                'client_id': AWS_CONFIG['cognito']['app_client_id'],
+                'code': auth_code,
+                'redirect_uri': REDIRECT_URI
+            }
+            
+            headers = {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+            
+            response = requests.post(
+                token_endpoint,
+                data=urllib.parse.urlencode(data),
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                tokens = response.json()
+                st.session_state.id_token = tokens.get('id_token')
+                st.session_state.access_token = tokens.get('access_token')
+                
+                # 解析用户信息
+                import jwt
+                decoded = jwt.decode(
+                    st.session_state.id_token,
+                    options={"verify_signature": False}
+                )
+                
+                st.session_state.user_name = (
+                    decoded.get('email') or 
+                    decoded.get('cognito:username') or 
+                    'User'
+                )
+                st.session_state.authenticated = True
+                
+                # 清除 URL 参数
+                st.query_params.clear()
+                return True
+            else:
+                st.session_state.auth_error = f"Token exchange failed: {response.text}"
+                st.query_params.clear()
+                return False
+                
+        except Exception as e:
+            st.session_state.auth_error = f"Authentication error: {str(e)}"
+            st.query_params.clear()
+            return False
+    
+    return None
 
 # main application
 def show_main_app():
@@ -609,20 +711,23 @@ def format_file_size(size_bytes):
     
     return f"{size_bytes:.1f} TB"
 
-# 主函数
 def main():
+    """主函数"""
     init_session_state()
-
-    # 检查是否是Cognito重定向回来的URL
-    if 'authenticated' not in st.session_state or not st.session_state.authenticated:
-        # 如果是Cognito重定向回来，处理授权码
-        query_params = st.query_params
-        if 'code' in query_params or 'error' in query_params:
-            handle_cognito_redirect()
-        else:
-            show_login_page()
-    else:
+    
+    # 处理 Cognito 回调
+    callback_result = handle_cognito_callback()
+    
+    if callback_result is True:
+        st.success("Successfully authenticated!")
+        time.sleep(1)
+        st.rerun()
+    
+    # 显示应用
+    if st.session_state.authenticated:
         show_main_app()
+    else:
+        show_login_page()
 
 if __name__ == "__main__":
     main()
