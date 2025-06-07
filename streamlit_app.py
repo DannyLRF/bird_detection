@@ -131,24 +131,29 @@ def show_login_page():
         st.markdown("---")
         st.markdown("#### Please sign in to continue")
 
-        # 构建 Cognito 登录 URL
         cognito_login_url = build_cognito_url()
 
-        # 方法1：使用 link_button（推荐）
-        try:
-            st.link_button(
-                "🔑 Sign In with AWS Cognito",
-                cognito_login_url,
-                use_container_width=True
-            )
-        except AttributeError:
-            # 如果 Streamlit 版本不支持 link_button
-            if st.button("🔑 Sign In with AWS Cognito", use_container_width=True):
-                st.write(f'<meta http-equiv="refresh" content="0; url={cognito_login_url}">', 
-                        unsafe_allow_html=True)
+        # 显示登录按钮
+        if st.button("🔑 Sign In with AWS Cognito", type="primary", use_container_width=True):
+            # 显示加载信息
+            st.info("🔄 Redirecting to AWS Cognito...")
+            
+            # 使用 JavaScript 重定向到顶层窗口
+            redirect_script = f"""
+                <script>
+                    window.top.location.href = "{cognito_login_url}";
+                </script>
+            """
+            st.components.v1.html(redirect_script, height=0)
 
         st.markdown("---")
-        st.info("📝 You will be redirected to AWS Cognito for authentication.")
+        
+        with st.expander("ℹ️ Login Information"):
+            st.info(
+                "You will be redirected to AWS Cognito for secure authentication. "
+                "After successful login, you'll be redirected back to this application."
+            )
+            st.caption(f"Redirect URL: `{REDIRECT_URI}`")
 
 def build_cognito_url():
     """构建正确编码的 Cognito URL"""
@@ -159,8 +164,6 @@ def build_cognito_url():
         'client_id': AWS_CONFIG['cognito']['app_client_id'],
         'redirect_uri': REDIRECT_URI,
         'scope': 'openid profile email',
-        # 可选：添加 state 参数增加安全性
-        'state': secrets.token_urlsafe(32)
     }
     
     base_url = f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/authorize"
