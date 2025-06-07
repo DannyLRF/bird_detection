@@ -20,22 +20,45 @@ def lambda_handler(event, context):
     _, ext = os.path.splitext(key.lower())
 
     if ext in [".jpg", ".jpeg", ".png"]:
+        print("Processing image file...")
+        thumbnail_key = key
+        print(f"Thumbnail key: {thumbnail_key}")
+        filename = os.path.basename(thumbnail_key)  # "bird.jpg"
+        print(f"Filename: {filename}")
+        original_key = "uploads/" + filename  # "uploads/bird.jpg"
+        print(f"Original key: {original_key}")
+        annotated_key = "annotated/images/" + filename
+        print(f"Annotated key: {annotated_key}")
+
         input_path = "/tmp/input.jpg"
         annotated_path = "/tmp/annotated.jpg"
 
-        image_obj = s3.get_object(Bucket=bucket, Key=key)
-        image_bytes = image_obj['Body'].read()
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        image.save(input_path)
+        try:
+            # Download original image for inference
+            print(f"Fetching original image from S3 at {original_key}")
+            image_obj = s3.get_object(Bucket=bucket, Key=original_key)
+            image_bytes = image_obj['Body'].read()
+            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            image.save(input_path)
+            print(f"Original image fetched successfully from {original_key}")
+            
+        except Exception as e:
+            print(f"Failed to fetch original image at {original_key}")
+            return {"statusCode": 404, "body": "Original image not found."}
 
+        # Inference and annotation
         detections = run_inference(input_path)
         draw_detections(input_path, detections, annotated_path)
 
-        output_key = "annotated/images/" + os.path.basename(key)
         with open(annotated_path, "rb") as f:
-            s3.upload_fileobj(f, "team99-uploaded-files", output_key)
+            s3.upload_fileobj(f, "team99-uploaded-files", annotated_key)
+
+        output_key = annotated_key
+        original_url = f"s3://{bucket}/{original_key}"
+        thumbnail_url = f"s3://{bucket}/{thumbnail_key}"
 
     elif ext in [".mp4", ".avi", ".mov", ".mkv"]:
+        print("Processing video file...")
         input_path = "/tmp/input" + ext
         annotated_path = "/tmp/annotated" + ext
 
@@ -59,8 +82,9 @@ def lambda_handler(event, context):
     table.put_item(Item={
         'file_id': file_id,
         'file_type': 'video' if ext in [".mp4", ".avi", ".mov", ".mkv"] else 'image',
-        'original_s3_url': f"s3://{bucket}/{key}",
-        'annotated_s3_url': annotated_url,
+        'original_s3_url': original_url if ext in [".jpg", ".jpeg", ".png"] else f"s3://{bucket}/{key}",
+        'thumbnail_s3_url': thumbnail_url if ext in [".jpg", ".jpeg", ".png"] else None,
+        'annotated_s3_url': f"s3://{bucket}/{output_key}" if ext in [".mp4", ".avi", ".mov", ".mkv"] else annotated_url,
         "detected_birds": bird_summary
     })
 
