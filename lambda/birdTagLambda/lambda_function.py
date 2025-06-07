@@ -6,6 +6,11 @@ import io
 import os
 import uuid
 from collections import Counter
+import logging
+
+# Set up logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 s3 = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb')
@@ -20,30 +25,30 @@ def lambda_handler(event, context):
     _, ext = os.path.splitext(key.lower())
 
     if ext in [".jpg", ".jpeg", ".png"]:
-        print("Processing image file...")
+        logger.info("Processing image file...")
         thumbnail_key = key
-        print(f"Thumbnail key: {thumbnail_key}")
+        logger.info(f"Thumbnail key: {thumbnail_key}")
         filename = os.path.basename(thumbnail_key)  # "bird.jpg"
-        print(f"Filename: {filename}")
+        logger.info(f"Filename: {filename}")
         original_key = "uploads/" + filename  # "uploads/bird.jpg"
-        print(f"Original key: {original_key}")
+        logger.info(f"Original key: {original_key}")
         annotated_key = "annotated/images/" + filename
-        print(f"Annotated key: {annotated_key}")
+        logger.info(f"Annotated key: {annotated_key}")
 
         input_path = "/tmp/input.jpg"
         annotated_path = "/tmp/annotated.jpg"
 
         try:
             # Download original image for inference
-            print(f"Fetching original image from S3 at {original_key}")
+            logger.info(f"Fetching original image from S3 at {original_key}")
             image_obj = s3.get_object(Bucket=bucket, Key=original_key)
             image_bytes = image_obj['Body'].read()
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
             image.save(input_path)
-            print(f"Original image fetched successfully from {original_key}")
+            logger.info(f"Original image fetched successfully from {original_key}")
             
         except Exception as e:
-            print(f"Failed to fetch original image at {original_key}")
+            logger.info(f"Failed to fetch original image at {original_key}")
             return {"statusCode": 404, "body": "Original image not found."}
 
         # Inference and annotation
@@ -58,7 +63,7 @@ def lambda_handler(event, context):
         thumbnail_url = f"s3://{bucket}/{thumbnail_key}"
 
     elif ext in [".mp4", ".avi", ".mov", ".mkv"]:
-        print("Processing video file...")
+        logger.info("Processing video file...")
         input_path = "/tmp/input" + ext
         annotated_path = "/tmp/annotated" + ext
 
@@ -76,7 +81,7 @@ def lambda_handler(event, context):
     bird_summary = [{"label": label, "count": count} for label, count in label_counts.items()]
     annotated_url = f"s3://{bucket}/{output_key}"
 
-    print("Inference complete...")
+    logger.info("Inference complete...")
 
     table = dynamodb.Table(TABLE_NAME)
     table.put_item(Item={
@@ -88,7 +93,7 @@ def lambda_handler(event, context):
         "detected_birds": bird_summary
     })
 
-    print("Done writing to DynamoDB, about to return...")
+    logger.info("Done writing to DynamoDB, about to return...")
 
     return {
         "statusCode": 200,
@@ -98,8 +103,3 @@ def lambda_handler(event, context):
             "annotated_output": annotated_url
         })
     }
-
-    print("This should not run")
-
-
-

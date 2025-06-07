@@ -4,13 +4,43 @@ from PIL import Image, ImageDraw, ImageFont
 import json
 import os
 import cv2
+import boto3
+import logging
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "model.onnx")
-LABELS_PATH = os.path.join(os.path.dirname(__file__), "labels.json")
+# Set up logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# S3 configuration
+MODEL_S3_BUCKET = "team99-bird-detection-models"
+VERSION_FILE_KEY = "birdTagging/current_version.txt"
+
+LOCAL_MODEL_PATH = "/tmp/model.onnx"
+LOCAL_LABELS_PATH = "/tmp/labels.json"
 INPUT_SIZE = 640
 CONFIDENCE_THRESHOLD = 0.5
 IOU_THRESHOLD = 0.5
 
+s3 = boto3.client("s3")
+
+# Download the version string
+version_obj = s3.get_object(Bucket=MODEL_S3_BUCKET, Key=VERSION_FILE_KEY)
+version_str = version_obj["Body"].read().decode("utf-8").strip()
+logger.info(f"Using model version: {version_str}")
+
+# Construct model paths
+model_key = f"birdTagging/models/{version_str}/model.onnx"
+labels_key = f"birdTagging/models/{version_str}/labels.json"
+
+# Download if not already in /tmp
+if not os.path.exists(LOCAL_MODEL_PATH):
+    logger.info(f"Downloading model from S3: {model_key}")
+    s3.download_file(MODEL_S3_BUCKET, model_key, LOCAL_MODEL_PATH)
+if not os.path.exists(LOCAL_LABELS_PATH):
+    logger.info(f"Downloading labels from S3: {labels_key}")
+    s3.download_file(MODEL_S3_BUCKET, labels_key, LOCAL_LABELS_PATH)
+
+# Load ONNX session and labels
 session_options = ort.SessionOptions()
 session_options.enable_mem_pattern = False
 session_options.enable_cpu_mem_arena = True
@@ -18,13 +48,17 @@ session_options.log_severity_level = 3
 session_options.log_verbosity_level = 0
 
 session = ort.InferenceSession(
-    MODEL_PATH,
+    LOCAL_MODEL_PATH,
     sess_options=session_options,
     providers=["CPUExecutionProvider"]
 )
 
-with open(LABELS_PATH, "r") as f:
+logger.info("ONNX model loaded successfully.")
+
+with open(LOCAL_LABELS_PATH, "r") as f:
     class_labels = json.load(f)
+
+logger.info(f"Loaded class labels.")
 
 def preprocess(image_path):
     image = Image.open(image_path).convert("RGB")
