@@ -5,7 +5,7 @@ import os
 s3 = boto3.client("s3")
 BUCKET_NAME = os.environ["BUCKET_NAME"]  # Set this as an env variable in Lambda
 
-def getSignedURL(event, context):
+def uploadFile(event, context):
     print("EVENT BODY:", event.get("body"))
     try:
         body = json.loads(event.get("body", "{}"))
