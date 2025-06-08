@@ -1,4 +1,4 @@
-# helpers.py
+# helpers.py 
 import streamlit as st
 from datetime import datetime
 from PIL import Image
@@ -9,7 +9,7 @@ def init_session_state():
     defaults = {
         'authenticated': False,
         'user_name': '',
-        'upload_results': [],
+        'upload_results': [],  
         'search_results': [],
         'id_token': None,
         'access_token': None,
@@ -39,35 +39,20 @@ def get_file_type_display(file_type):
         return 'Audio'
     return 'Unknown'
 
-# --- Mock/Simulation Functions ---
+# --- API调用函数 ---
 
-def simulate_ai_detection(uploaded_file):
-    """Simulate AI detection for a given file."""
-    species_list = ['Crow', 'Pigeon', 'Sparrow', 'Robin', 'Eagle', 'Owl']
-    detected_species = species_list[hash(uploaded_file.name) % len(species_list)]
-    confidence = 0.75 + (hash(uploaded_file.name) % 25) / 100
-    count = (hash(uploaded_file.name) % 3) + 1
-    
-    return {
-        'file_name': uploaded_file.name,
-        'file_type': uploaded_file.type,
-        'file_size': uploaded_file.size,
-        'species': detected_species,
-        'confidence': confidence,
-        'count': count,
-        'timestamp': datetime.now(),
-        'file_data': uploaded_file.read()
-    }
+def get_user_uploads():
+    """get uploaded filelist"""
+    # TODO: 
+    # api_url = f"{API_BASE_URL}/user-uploads"
+    # response = requests.get(api_url, headers=auth_headers)
+    # return response.json()
+    pass
 
-def generate_mock_search_results(query):
-    """Generate mock search results for a given query."""
-    mock_db = [
-        {'file_name': 'crow_flock.jpg', 'species': 'Crow', 'confidence': 0.95, 'count': 3, 'file_type': 'image/jpeg'},
-        {'file_name': 'pigeon_park.mp4', 'species': 'Pigeon', 'confidence': 0.87, 'count': 2, 'file_type': 'video/mp4'},
-        {'file_name': 'sparrow_song.wav', 'species': 'Sparrow', 'confidence': 0.92, 'count': 1, 'file_type': 'audio/wav'},
-    ]
-    results = [
-        {**item, 'timestamp': datetime.now(), 'file_data': None}
-        for item in mock_db if query.lower() in item['species'].lower()
-    ]
-    return results
+def get_statistics_data():
+    """get statistic"""
+    # TODO: 实现API调用获取统计数据
+    # api_url = f"{API_BASE_URL}/statistics"
+    # response = requests.get(api_url, headers=auth_headers)
+    # return response.json()
+    pass
