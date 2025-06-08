@@ -12,6 +12,8 @@ AWS_CONFIG = {
     }
 }
 
-REDIRECT_URI = "https://99-birddetection.streamlit.app/"
+# REDIRECT_URI = "https://99-birddetection.streamlit.app/"
+
+REDIRECT_URI = "http://localhost:8501/"  # For local development
 
 API_BASE_URL = "https://d2u7y2aieb.execute-api.ap-southeast-2.amazonaws.com/dev/api"
