@@ -1,58 +1,52 @@
-# pages/Upload.py
+# pages/1_📤_Upload.py
 import streamlit as st
-import time
 import requests
-from PIL import Image
-import io
-from helpers import init_session_state, simulate_ai_detection, format_file_size
+from helpers import init_session_state
 from auth import check_authentication
+from config import API_BASE_URL  # import API URL
 
 init_session_state()
 
 def process_uploaded_files(uploaded_files):
-    """Process uploaded files and show progress."""
+    """
+    Process each uploaded file by getting a pre-signed URL and uploading to S3.
+    """
+    st.info(f"Starting upload for {len(uploaded_files)} file(s)...")
     progress_bar = st.progress(0)
-    status_text = st.empty()
-    results = []
     
     for i, uploaded_file in enumerate(uploaded_files):
-        progress = (i + 1) / len(uploaded_files)
-        progress_bar.progress(progress)
-        status_text.text(f"Processing {uploaded_file.name}...")
-        
-        # This is a mock processing step
-        result = simulate_ai_detection(uploaded_file)
-        results.append(result)
+        with st.status(f"Uploading {uploaded_file.name}...", expanded=True) as status:
+            try:
+                # 1. Get pre-signed URL from our API
+                st.write("Requesting upload URL...")
+                api_url = f"{API_BASE_URL}/upload"
+                response = requests.post(
+                    api_url,
+                    json={"fileName": uploaded_file.name, "fileType": uploaded_file.type}
+                )
+                response.raise_for_status()  # Will raise an exception for 4XX/5XX errors
+                
+                presigned_data = response.json()
+                upload_url = presigned_data["uploadUrl"]
+                st.write("Upload URL received. Uploading to S3...")
+
+                # 2. Upload file to the pre-signed URL
+                s3_response = requests.put(
+                    upload_url,
+                    data=uploaded_file.getvalue(),
+                    headers={"Content-Type": uploaded_file.type}
+                )
+                s3_response.raise_for_status()
+
+                status.update(label=f"✅ {uploaded_file.name} uploaded successfully!", state="complete")
+
+            except requests.exceptions.RequestException as e:
+                status.update(label=f"❌ Error uploading {uploaded_file.name}: {e}", state="error")
+            
+        progress_bar.progress((i + 1) / len(uploaded_files))
     
-    st.session_state.upload_results.extend(results)
-    progress_bar.progress(1.0)
-    status_text.success("Processing complete!")
-    time.sleep(1)
-    st.rerun()
-
-def show_upload_results():
-    """Display results from file uploads."""
-    if not st.session_state.upload_results:
-        st.info("Upload files to see identification results here.")
-        return
-
-    st.subheader(f"{len(st.session_state.upload_results)} Upload Result(s)")
-    for i, result in enumerate(st.session_state.upload_results):
-        with st.expander(f"🔍 {result['file_name']} - {result['species']} ({result['confidence']:.1%})"):
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                if result['file_type'].startswith('image/') and result.get('file_data'):
-                    try:
-                        st.image(Image.open(io.BytesIO(result['file_data'])), caption=result['file_name'], use_column_width=True)
-                    except Exception as e:
-                        st.warning(f"Could not display image: {e}")
-                else:
-                    st.info(f"📁 Preview not available for {result['file_type']}")
-            with col2:
-                st.markdown(f"**Species:** {result['species']}")
-                st.metric("Confidence", f"{result['confidence']:.1%}")
-                st.metric("Detected Count", result['count'])
-                st.markdown(f"**File Size:** {format_file_size(result['file_size'])}")
+    st.success("All file uploads initiated! Backend processing will start shortly.")
+    st.warning("You can go to the 'Search' page to find your files after a few moments.")
 
 # --- Main Page UI ---
 if not check_authentication():
@@ -68,8 +62,13 @@ uploaded_files = st.file_uploader(
 )
 
 if uploaded_files:
-    if st.button("🔍 Process Files", type="primary", use_container_width=True):
+    if st.button("🚀 Start Upload", type="primary", use_container_width=True):
         process_uploaded_files(uploaded_files)
 
 st.markdown("---")
-show_upload_results()
+st.info(
+    "**How it works:**\n\n"
+    "1. Files are uploaded securely to our backend.\n"
+    "2. The backend AI model processes each file to identify birds.\n"
+    "3. Once processed, you can find your tagged files on the **Search** page."
+)
