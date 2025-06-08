@@ -13,9 +13,8 @@ AWS_CONFIG = {
     }
 }
 
-if os.getenv("STREAMLIT_SHARING", None):
-    REDIRECT_URI = "https://99-birddetection.streamlit.app/"
-else:
-    REDIRECT_URI = "http://localhost:8501/"
+REDIRECT_URI = "https://99-birddetection.streamlit.app/"
+
+# REDIRECT_URI = "http://localhost:8501/"
 
 API_BASE_URL = "https://d2u7y2aieb.execute-api.ap-southeast-2.amazonaws.com/dev/api"
