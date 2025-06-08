@@ -16,6 +16,16 @@ def build_cognito_url():
     base_url = f"https://{AWS_CONFIG['cognito']['domain']}/oauth2/authorize"
     return f"{base_url}?{urllib.parse.urlencode(params)}"
 
+def build_cognito_logout_url():
+    """Build Cognito logout URL that will also clear Cognito session."""
+    params = {
+        'client_id': AWS_CONFIG['cognito']['app_client_id'],
+        'logout_uri': REDIRECT_URI,  # Where to redirect after logout
+        'response_type': 'code'
+    }
+    base_url = f"https://{AWS_CONFIG['cognito']['domain']}/logout"
+    return f"{base_url}?{urllib.parse.urlencode(params)}"
+
 def show_login_page():
     """Display the login page UI."""
     st.title("🕊️ Bird Tagging System")
@@ -67,3 +77,14 @@ def handle_cognito_callback():
 def check_authentication():
     """Check if the user is authenticated."""
     return st.session_state.get('authenticated', False)
+
+def logout_user():
+    """Clear session and return Cognito logout URL."""
+    # Clear all session state
+    keys_to_clear = ['authenticated', 'user_name', 'id_token', 'access_token', 'upload_results', 'search_results']
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    # Return the Cognito logout URL
+    return build_cognito_logout_url()

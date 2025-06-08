@@ -36,9 +36,5 @@ def show_statistics():
         st.bar_chart(species_df.set_index('Species'))
 
 # --- Main Page UI ---
-if not check_authentication():
-    st.warning("Please log in to access this page.")
-    st.stop()
-
 st.header("📊 Statistics")
 show_statistics()

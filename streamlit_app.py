@@ -1,8 +1,9 @@
 # streamlit_app.py
 import streamlit as st
 import time
-from auth import handle_cognito_callback, show_login_page, check_authentication
+from auth import handle_cognito_callback, show_login_page, check_authentication, logout_user
 from helpers import init_session_state
+from config import AWS_CONFIG, REDIRECT_URI
 
 # Page Configuration
 st.set_page_config(
@@ -83,14 +84,15 @@ def main():
             if st.button("🔄 Refresh Page"):
                 st.rerun()
                 
-            if st.button("🚪 Logout"):
-                # Clear session
-                for key in ['authenticated', 'user_name', 'id_token', 'access_token']:
+            # Logout with link button - most reliable approach
+            logout_url = f"https://{AWS_CONFIG['cognito']['domain']}/logout?client_id={AWS_CONFIG['cognito']['app_client_id']}&logout_uri={REDIRECT_URI}"
+            
+            if st.link_button("🚪 Logout", logout_url, use_container_width=True):
+                # This won't execute because user will be redirected, but clear session anyway
+                keys_to_clear = ['authenticated', 'user_name', 'id_token', 'access_token', 'upload_results', 'search_results']
+                for key in keys_to_clear:
                     if key in st.session_state:
                         del st.session_state[key]
-                st.success("Logged out successfully!")
-                time.sleep(1)
-                st.rerun()
 
 if __name__ == "__main__":
     main()

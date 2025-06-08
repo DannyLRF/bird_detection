@@ -8,18 +8,6 @@ from config import API_BASE_URL
 init_session_state()
 require_authentication()
 
-st.header("📤 Upload and Process Files")
-
-def hide_sidebar():
-    """Hide the sidebar using CSS when user is not authenticated."""
-    st.markdown("""
-    <style>
-        section[data-testid="stSidebar"] {
-            display: none !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-
 def process_uploaded_files(uploaded_files):
     """
     Process each uploaded file by getting a pre-signed URL and uploading to S3.
@@ -60,15 +48,6 @@ def process_uploaded_files(uploaded_files):
     
     st.success("All file uploads initiated! Backend processing will start shortly.")
     st.warning("You can go to the 'Search' page to find your files after a few moments.")
-
-# --- Authentication Check ---
-if not check_authentication():
-    hide_sidebar()
-    st.warning("Please log in to access this page.")
-    st.markdown("👈 **Go back to the main page to log in.**")
-    if st.button("🏠 Go to Home Page"):
-        st.switch_page("streamlit_app.py")
-    st.stop()
 
 # --- Main Page UI ---
 st.header("📤 Upload and Process Files")

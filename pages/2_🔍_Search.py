@@ -3,13 +3,12 @@ import streamlit as st
 import requests
 from helpers import init_session_state
 from auth_utils import require_authentication 
+from auth import check_authentication  # Add this import
 from config import API_BASE_URL
 import json
 
 init_session_state()
 require_authentication()
-
-st.header("📤 Upload and Process Files")
 
 def search_files_by_species(query):
     """Search for files by species name by calling the /species endpoint."""
@@ -90,10 +89,6 @@ def show_search_results():
                 st.error(f"Could not display file: {e}")
 
 # --- Main Page UI ---
-if not check_authentication():
-    st.warning("Please log in to access this page.")
-    st.stop()
-
 st.header("🔍 Search Files")
 search_query = st.text_input(
     "Search by species name",

@@ -51,7 +51,7 @@ def get_user_uploads():
 
 def get_statistics_data():
     """get statistic"""
-    # TODO: 实现API调用获取统计数据
+    # TODO: 
     # api_url = f"{API_BASE_URL}/statistics"
     # response = requests.get(api_url, headers=auth_headers)
     # return response.json()

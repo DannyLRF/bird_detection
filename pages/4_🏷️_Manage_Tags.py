@@ -2,7 +2,7 @@
 import streamlit as st
 import requests
 from helpers import init_session_state
-from auth_utils import require_authentication  # 
+from auth_utils import require_authentication
 from config import API_BASE_URL
 import json
 
@@ -39,10 +39,6 @@ def bulk_tag_files(urls, tags, operation):
             st.error(f"An error occurred: {e}")
 
 # --- Main Page UI ---
-if not check_authentication():
-    st.warning("Please log in to access this page.")
-    st.stop()
-
 st.header("🏷️ Bulk Tag Management")
 st.info("Manually add or remove tags for multiple files at once.")
 
