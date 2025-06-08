@@ -1,12 +1,14 @@
-# pages/1_📤_Upload.py
+# pages/1_📤_Upload.py (New Version)
 import streamlit as st
 import requests
-from helpers import init_session_state
-from auth_utils import require_authentication
+from auth import authenticate_user, add_logout_button # Import the new functions
 from config import API_BASE_URL
 
-init_session_state()
-require_authentication()
+# This single line handles the authentication check
+authenticate_user()
+
+# Add the logout button to maintain a consistent UI
+add_logout_button()
 
 def process_uploaded_files(uploaded_files):
     """

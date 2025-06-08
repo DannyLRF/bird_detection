@@ -1,19 +1,18 @@
-# pages/4_🏷️_Manage_Tags.py
+# pages/4_🏷️_Manage_Tags.py (New Version)
 import streamlit as st
 import requests
-from helpers import init_session_state
-from auth_utils import require_authentication
+from auth import authenticate_user, add_logout_button # Import the new functions
 from config import API_BASE_URL
-import json
 
-init_session_state()
-require_authentication()
+# --- Authentication Check ---
+authenticate_user()
+add_logout_button()
 
+# --- Page-specific Functions ---
 def bulk_tag_files(urls, tags, operation):
     """Calls the bulk-tag API endpoint."""
     api_url = f"{API_BASE_URL}/bulk-tag"
     
-    # Convert string inputs to lists
     url_list = [url.strip() for url in urls.split('\n') if url.strip()]
     tag_list = [tag.strip() for tag in tags.split(',') if tag.strip()]
     
@@ -29,6 +28,9 @@ def bulk_tag_files(urls, tags, operation):
 
     with st.spinner("Applying tags..."):
         try:
+            # You would typically pass the auth token in headers here
+            # headers = {'Authorization': f'Bearer {st.session_state.id_token}'}
+            # response = requests.post(api_url, json=payload, headers=headers)
             response = requests.post(api_url, json=payload)
             response.raise_for_status()
             st.success("Tags updated successfully!")
@@ -49,7 +51,7 @@ urls = st.text_area(
 
 tags = st.text_input(
     "Tags (comma-separated)",
-    placeholder="Crow,1, Sparrow,2"
+    placeholder="Crow, Sparrow"
 )
 
 operation = st.radio("Operation", ("Add", "Remove"))

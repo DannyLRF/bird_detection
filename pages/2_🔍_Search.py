@@ -1,15 +1,17 @@
-# pages/2_🔍_Search.py
+# pages/2_🔍_Search.py (New Version)
 import streamlit as st
 import requests
-from helpers import init_session_state
-from auth_utils import require_authentication 
-from auth import check_authentication  # Add this import
-from config import API_BASE_URL
 import json
+from auth import authenticate_user, add_logout_button # Import the new functions
+from config import API_BASE_URL
 
-init_session_state()
-require_authentication()
+# --- Authentication Check ---
+# This single line handles the authentication check and displays the login page if needed.
+authenticate_user()
+# Add the logout button to the sidebar to maintain a consistent UI.
+add_logout_button()
 
+# --- Page-specific Functions ---
 def search_files_by_species(query):
     """Search for files by species name by calling the /species endpoint."""
     if not query.strip():
@@ -21,7 +23,7 @@ def search_files_by_species(query):
     # The API expects a list of lists, e.g., [["crow"], ["pigeon"]]
     payload = [[tag.strip() for tag in query.split(',')]]
 
-    # add debug information
+    # Debug information
     st.write(f"🔍 **Debug Info:**")
     st.write(f"- API URL: `{api_url}`")
     st.write(f"- Payload: `{payload}`")
@@ -29,17 +31,12 @@ def search_files_by_species(query):
     with st.spinner(f"Searching for files with '{query}'..."):
         try:
             response = requests.post(api_url, json=payload)
-            
-            # add response status debug
             st.write(f"- Response Status: `{response.status_code}`")
-            
             response.raise_for_status()
             results = response.json()
             
-            # add raw response debug
             st.write(f"- Raw Response: `{json.dumps(results, indent=2)}`")
             
-            # The API returns a dictionary with a list of presigned URLs
             matched_files = results.get("matched_files", [])
             st.session_state.search_results = matched_files
             
@@ -62,21 +59,17 @@ def show_search_results():
         return
 
     st.subheader("Search Results")
-    
-    # add debug information
     results = st.session_state.search_results
     st.write(f"**Total Results:** {len(results)}")
     
-    # Create columns to display results in a grid
     cols = st.columns(3)
     
     for i, url in enumerate(results):
         with cols[i % 3]:
             st.write(f"**File {i+1}:**")
-            st.code(url, language=None)  # display URL
+            st.code(url, language=None)
             
             try:
-                # Check file extension to decide how to display
                 if ".mp4" in url.lower() or ".mov" in url.lower():
                     st.video(url)
                 elif ".jpg" in url.lower() or ".jpeg" in url.lower() or ".png" in url.lower():
@@ -105,12 +98,3 @@ if st.session_state.get('search_results'):
 
 st.markdown("---")
 show_search_results()
-
-# add debug panel
-with st.expander("🔧 Debug Panel"):
-    st.write("**Current Session State:**")
-    st.json({
-        "authenticated": st.session_state.get('authenticated', False),
-        "search_results_count": len(st.session_state.get('search_results', [])),
-        "api_base_url": API_BASE_URL
-    })

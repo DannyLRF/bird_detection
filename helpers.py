@@ -4,21 +4,6 @@ from datetime import datetime
 from PIL import Image
 import io
 
-def init_session_state():
-    """Initialize all session state variables."""
-    defaults = {
-        'authenticated': False,
-        'user_name': '',
-        'upload_results': [],  
-        'search_results': [],
-        'id_token': None,
-        'access_token': None,
-        'auth_error': None,
-    }
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
-
 def format_file_size(size_bytes):
     """Format file size for display."""
     if size_bytes == 0:
