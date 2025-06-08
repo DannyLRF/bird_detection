@@ -1,4 +1,4 @@
-# auth.py (New Version)
+# auth.py (Improved Version with Debugging)
 import streamlit as st
 import requests
 import urllib.parse
@@ -20,6 +20,13 @@ def _initialize_session_state():
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
+            
+    # 添加调试信息（可在生产环境中移除）
+    if st.session_state.get('debug_mode', False):
+        st.sidebar.write("🔍 Debug: Session State")
+        st.sidebar.write(f"- Authenticated: {st.session_state.authenticated}")
+        st.sidebar.write(f"- User: {st.session_state.user_name}")
+        st.sidebar.write(f"- Has ID Token: {bool(st.session_state.id_token)}")
 
 def _build_cognito_auth_url():
     """Builds the Cognito authorization URL."""
@@ -56,18 +63,21 @@ def _handle_cognito_callback():
             st.session_state.id_token = tokens.get('id_token')
             st.session_state.access_token = tokens.get('access_token')
 
-            # Decode the ID token to get user info, without signature verification
-            # as we trust the token endpoint from which we just received it.
+            # Decode the ID token to get user info
             decoded = jwt.decode(st.session_state.id_token, options={"verify_signature": False})
             st.session_state.user_name = decoded.get('email') or decoded.get('cognito:username') or 'User'
             st.session_state.authenticated = True
-            st.session_state.auth_error = None # Clear any old errors
+            st.session_state.auth_error = None
 
-            # Clear the auth code from the URL to prevent reuse.
+            # Clear the auth code from the URL
             st.query_params.clear()
+            
+            # 强制重新运行以确保状态更新
+            st.rerun()
 
         except requests.exceptions.RequestException as e:
-            st.session_state.auth_error = f"Authentication failed: Could not exchange token. Error: {e.response.text}"
+            error_msg = f"Authentication failed: {e.response.text if hasattr(e, 'response') else str(e)}"
+            st.session_state.auth_error = error_msg
             st.session_state.authenticated = False
         except Exception as e:
             st.session_state.auth_error = f"An unknown authentication error occurred: {e}"
@@ -78,7 +88,11 @@ def _show_login_page():
     Displays the login interface and hides the sidebar.
     """
     # Hide sidebar
-    st.markdown("<style> section[data-testid='stSidebar'] { display: none !important; } </style>", unsafe_allow_html=True)
+    st.markdown("""
+        <style>
+        section[data-testid='stSidebar'] { display: none !important; }
+        </style>
+    """, unsafe_allow_html=True)
     
     st.title("🕊️ Bird Tagging System")
     st.markdown("### Please log in to continue")
@@ -87,7 +101,11 @@ def _show_login_page():
     # Display auth error if it exists
     if st.session_state.auth_error:
         st.error(st.session_state.auth_error)
-        st.session_state.auth_error = None # Clear after displaying
+
+    # 显示当前的 Redirect URI（调试用）
+    with st.expander("🔧 Debug Information"):
+        st.info(f"Redirect URI: {REDIRECT_URI}")
+        st.info(f"Current URL: {st.get_option('browser.serverAddress')}")
 
     login_url = _build_cognito_auth_url()
     st.link_button("🔐 Sign in with AWS", login_url, use_container_width=True, type="primary")
@@ -96,10 +114,6 @@ def _show_login_page():
 def authenticate_user():
     """
     A centralized function to handle authentication for all pages.
-    - Initializes session state.
-    - Handles the Cognito callback.
-    - If not authenticated, it displays the login page and stops page execution.
-    - If authenticated, it ensures the sidebar is visible and returns True.
     
     Returns:
         bool: True if the user is authenticated, False otherwise.
@@ -109,10 +123,15 @@ def authenticate_user():
 
     if not st.session_state.get('authenticated', False):
         _show_login_page()
-        st.stop() # Stop execution of the rest of the page
+        st.stop()
+        return False
     else:
-        # Ensure the sidebar is visible when logged in.
-        st.markdown("<style> section[data-testid='stSidebar'] { display: block !important; } </style>", unsafe_allow_html=True)
+        # Ensure the sidebar is visible when logged in
+        st.markdown("""
+            <style>
+            section[data-testid='stSidebar'] { display: block !important; }
+            </style>
+        """, unsafe_allow_html=True)
         return True
 
 def add_logout_button():
@@ -122,9 +141,15 @@ def add_logout_button():
     with st.sidebar:
         st.header("👤 User Info")
         
-        # Use .get() to provide a default value and prevent AttributeErrors
         user_name = st.session_state.get('user_name', 'Guest')
         st.write(f"**Welcome, {user_name}**")
+        
+        # 添加认证状态指示器
+        if st.session_state.get('authenticated', False):
+            st.success("✅ Authenticated")
+        else:
+            st.error("❌ Not Authenticated")
+            
         st.markdown("---")
         
         logout_params = {
@@ -133,8 +158,18 @@ def add_logout_button():
         }
         logout_url = f"https://{AWS_CONFIG['cognito']['domain']}/logout?{urllib.parse.urlencode(logout_params)}"
         
-        if st.link_button("🚪 Logout", logout_url, use_container_width=True):
-            # Use the canonical .clear() method to wipe the session state
-            st.session_state.clear()
-            # Streamlit will rerun the script automatically after this block.
-            # The browser will then be redirected by Cognito.
+        if st.button("🚪 Logout", use_container_width=True):
+            # Clear session state
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            # Redirect to logout URL
+            st.write(f'<meta http-equiv="refresh" content="0; url={logout_url}">', unsafe_allow_html=True)
+
+def toggle_debug_mode():
+    """Toggle debug mode for troubleshooting"""
+    with st.sidebar:
+        st.markdown("---")
+        if st.checkbox("🐛 Debug Mode", value=st.session_state.get('debug_mode', False)):
+            st.session_state.debug_mode = True
+        else:
+            st.session_state.debug_mode = False

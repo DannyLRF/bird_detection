@@ -1,4 +1,5 @@
 # config.py
+import os
 
 AWS_CONFIG = {
     'region': 'ap-southeast-2',
@@ -12,8 +13,9 @@ AWS_CONFIG = {
     }
 }
 
-# REDIRECT_URI = "https://99-birddetection.streamlit.app/"
-
-REDIRECT_URI = "http://localhost:8501/"  # For local development
+if os.getenv("STREAMLIT_SHARING", None):
+    REDIRECT_URI = "https://99-birddetection.streamlit.app/"
+else:
+    REDIRECT_URI = "http://localhost:8501/"
 
 API_BASE_URL = "https://d2u7y2aieb.execute-api.ap-southeast-2.amazonaws.com/dev/api"
