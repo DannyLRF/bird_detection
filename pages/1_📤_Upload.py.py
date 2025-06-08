@@ -2,10 +2,23 @@
 import streamlit as st
 import requests
 from helpers import init_session_state
-from auth import check_authentication
-from config import API_BASE_URL  # import API URL
+from auth_utils import require_authentication
+from config import API_BASE_URL
 
 init_session_state()
+require_authentication()
+
+st.header("📤 Upload and Process Files")
+
+def hide_sidebar():
+    """Hide the sidebar using CSS when user is not authenticated."""
+    st.markdown("""
+    <style>
+        section[data-testid="stSidebar"] {
+            display: none !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
 def process_uploaded_files(uploaded_files):
     """
@@ -48,11 +61,16 @@ def process_uploaded_files(uploaded_files):
     st.success("All file uploads initiated! Backend processing will start shortly.")
     st.warning("You can go to the 'Search' page to find your files after a few moments.")
 
-# --- Main Page UI ---
+# --- Authentication Check ---
 if not check_authentication():
+    hide_sidebar()
     st.warning("Please log in to access this page.")
+    st.markdown("👈 **Go back to the main page to log in.**")
+    if st.button("🏠 Go to Home Page"):
+        st.switch_page("streamlit_app.py")
     st.stop()
 
+# --- Main Page UI ---
 st.header("📤 Upload and Process Files")
 
 uploaded_files = st.file_uploader(

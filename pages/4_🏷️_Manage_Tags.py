@@ -2,11 +2,12 @@
 import streamlit as st
 import requests
 from helpers import init_session_state
-from auth import check_authentication
+from auth_utils import require_authentication  # 
 from config import API_BASE_URL
 import json
 
 init_session_state()
+require_authentication()
 
 def bulk_tag_files(urls, tags, operation):
     """Calls the bulk-tag API endpoint."""

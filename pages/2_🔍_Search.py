@@ -1,12 +1,15 @@
-# pages/2_🔍_Search.py (增强版)
+# pages/2_🔍_Search.py
 import streamlit as st
 import requests
 from helpers import init_session_state
-from auth import check_authentication
+from auth_utils import require_authentication 
 from config import API_BASE_URL
 import json
 
 init_session_state()
+require_authentication()
+
+st.header("📤 Upload and Process Files")
 
 def search_files_by_species(query):
     """Search for files by species name by calling the /species endpoint."""
@@ -19,7 +22,7 @@ def search_files_by_species(query):
     # The API expects a list of lists, e.g., [["crow"], ["pigeon"]]
     payload = [[tag.strip() for tag in query.split(',')]]
 
-    # 添加调试信息
+    # add debug information
     st.write(f"🔍 **Debug Info:**")
     st.write(f"- API URL: `{api_url}`")
     st.write(f"- Payload: `{payload}`")
@@ -28,13 +31,13 @@ def search_files_by_species(query):
         try:
             response = requests.post(api_url, json=payload)
             
-            # 添加响应状态调试
+            # add response status debug
             st.write(f"- Response Status: `{response.status_code}`")
             
             response.raise_for_status()
             results = response.json()
             
-            # 添加响应内容调试
+            # add raw response debug
             st.write(f"- Raw Response: `{json.dumps(results, indent=2)}`")
             
             # The API returns a dictionary with a list of presigned URLs
@@ -61,7 +64,7 @@ def show_search_results():
 
     st.subheader("Search Results")
     
-    # 添加结果数量信息
+    # add debug information
     results = st.session_state.search_results
     st.write(f"**Total Results:** {len(results)}")
     
@@ -71,7 +74,7 @@ def show_search_results():
     for i, url in enumerate(results):
         with cols[i % 3]:
             st.write(f"**File {i+1}:**")
-            st.code(url, language=None)  # 显示完整URL
+            st.code(url, language=None)  # display URL
             
             try:
                 # Check file extension to decide how to display
@@ -108,7 +111,7 @@ if st.session_state.get('search_results'):
 st.markdown("---")
 show_search_results()
 
-# 添加调试面板
+# add debug panel
 with st.expander("🔧 Debug Panel"):
     st.write("**Current Session State:**")
     st.json({

@@ -1,10 +1,13 @@
 # pages/3_📊_Statistics.py
 import streamlit as st
 import pandas as pd
-from helpers import init_session_state, get_file_type_display
-from auth import check_authentication
+import requests
+from helpers import init_session_state
+from auth_utils import require_authentication 
+from config import API_BASE_URL
 
 init_session_state()
+require_authentication()
 
 def show_statistics():
     """Display overall statistics."""
