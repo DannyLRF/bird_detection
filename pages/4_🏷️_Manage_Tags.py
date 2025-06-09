@@ -7,6 +7,7 @@ from config import API_BASE_URL
 # --- Authentication Check ---
 authenticate_user()
 add_logout_button()
+headers = {"Authorization": f"Bearer {st.session_state['id_token']}"}
 
 # --- Page-specific Functions ---
 def bulk_tag_manager():
@@ -51,7 +52,8 @@ def bulk_tag_manager():
         try:
             response = requests.post(
                 f"{API_BASE_URL}/bulk-tag",
-                json=payload
+                json=payload,
+                headers=headers
             )
             response.raise_for_status()
             result = response.json()

@@ -7,6 +7,7 @@ from auth import authenticate_user, add_logout_button # Import the new functions
 authenticate_user()
 # Add the logout button to the sidebar to maintain a consistent UI.
 add_logout_button()
+headers = {"Authorization": f"Bearer {st.session_state['id_token']}"}
 
 st.header("🔔 Subscribe")
 
@@ -53,7 +54,8 @@ if st.button("Subscribe"):
                 json={
                     "email": email,
                     "birdTag": clean_tags
-                }
+                },
+                headers=headers
             )
             if response.status_code == 200:
                 st.success("Subscription request sent! Please confirm via the email sent to your email.")

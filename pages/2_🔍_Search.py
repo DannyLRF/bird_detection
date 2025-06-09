@@ -8,6 +8,7 @@ from config import API_BASE_URL
 # --- Authentication ---
 authenticate_user()
 add_logout_button()
+headers = {"Authorization": f"Bearer {st.session_state['id_token']}"}
 
 # --- API URLs ---
 SPECIES_API = f"{API_BASE_URL}/species"
@@ -54,7 +55,7 @@ def search_by_species():
         st.session_state.search_results = []
         with st.spinner("Searching by species..."):
             try:
-                response = requests.post(SPECIES_API, json=payload)
+                response = requests.post(SPECIES_API, json=payload, headers=headers)
                 response.raise_for_status()
                 results = response.json()
                 st.session_state.search_results = results.get("matched_files", [])
@@ -95,7 +96,7 @@ def search_by_uploaded_file():
         st.session_state.search_results = []
         with st.spinner("Processing uploaded file and searching for similar matches..."):
             try:
-                response = requests.post(f"{API_BASE_URL}/files", json=payload)
+                response = requests.post(f"{API_BASE_URL}/files", json=payload, headers=headers)
                 response.raise_for_status()
                 results = response.json()
                 st.session_state.search_results = results.get("matched_files", [])
@@ -220,7 +221,7 @@ with st.expander("🔧 Search by Tag and Exact Count (Query Params)"):
             st.session_state.search_results = []
             with st.spinner("Searching by query params..."):
                 try:
-                    response = requests.get(BIRDS_API, params=query_params)
+                    response = requests.get(BIRDS_API, params=query_params, headers=headers)
                     response.raise_for_status()
                     results = response.json()
                     st.session_state.search_results = results.get("matched_files", [])
@@ -273,7 +274,7 @@ with st.expander("📉 Search by Minimum Count Threshold (Flexible JSON Body)"):
             st.session_state.search_results = []
             with st.spinner("Searching with threshold..."):
                 try:
-                    response = requests.post(BIRDS_API, json=payload)
+                    response = requests.post(BIRDS_API, json=payload, headers=headers)
                     response.raise_for_status()
                     results = response.json()
                     st.session_state.search_results = results.get("matched_files", [])
@@ -298,7 +299,7 @@ with st.expander("🖼️ Lookup Full Image from Thumbnail URL"):
 
             with st.spinner("Looking up full image URL..."):
                 try:
-                    response = requests.post(lookup_url, json=payload)
+                    response = requests.post(lookup_url, json=payload, headers=headers)
                     response.raise_for_status()
                     result = response.json()
                     if "original_url" in result:

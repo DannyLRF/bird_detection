@@ -10,6 +10,8 @@ authenticate_user()
 # Add the logout button to maintain a consistent UI
 add_logout_button()
 
+headers = {"Authorization": f"Bearer {st.session_state['id_token']}"}
+
 def process_uploaded_files(uploaded_files):
     """
     Process each uploaded file by getting a pre-signed URL and uploading to S3.
@@ -25,7 +27,8 @@ def process_uploaded_files(uploaded_files):
                 api_url = f"{API_BASE_URL}/upload"
                 response = requests.post(
                     api_url,
-                    json={"fileName": uploaded_file.name, "fileType": uploaded_file.type}
+                    json={"fileName": uploaded_file.name, "fileType": uploaded_file.type},
+                    headers=headers
                 )
                 response.raise_for_status()  # Will raise an exception for 4XX/5XX errors
                 

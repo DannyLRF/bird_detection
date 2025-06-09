@@ -9,6 +9,8 @@ authenticate_user()
 # Add the logout button to the sidebar to maintain a consistent UI.
 add_logout_button()
 
+headers = {"Authorization": f"Bearer {st.session_state['id_token']}"}
+
 # Session state for storing URLs
 if "url_fields" not in st.session_state:
     st.session_state.url_fields = [""]
@@ -35,7 +37,7 @@ def submit_urls():
         api_url = "https://d2u7y2aieb.execute-api.ap-southeast-2.amazonaws.com/dev/api/upload"
 
         # Send DELETE request
-        response = requests.delete(api_url, data=json.dumps(payload))
+        response = requests.delete(api_url, data=json.dumps(payload), headers=headers)
 
         if response.status_code == 200:
             st.success("Files successfully deleted.")
