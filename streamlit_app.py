@@ -9,14 +9,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# Setting Sidebar links
-st.sidebar.page_link("streamlit_app.py", label="🕊️ Bird Tagging")
-st.sidebar.page_link("pages/1_📤_Upload.py", label="📤 Upload")
-st.sidebar.page_link("pages/2_🔍_Search.py", label="📊 Search")
-st.sidebar.page_link("pages/3_🚫_Delete.py", label="📊 Delete")
-st.sidebar.page_link("pages/4_🏷️_Manage_Tags.py", label="📊 Manage Tags")
-st.sidebar.page_link("pages/5_🔔_Subscribe.py", label="📊 Subscribe")
-
 # Use the centralized authentication function.
 # If the user is not logged in, it will display the login page and stop execution.
 authenticate_user()
