@@ -9,61 +9,58 @@ authenticate_user()
 add_logout_button()
 
 # --- Page-specific Functions ---
-def bulk_tag_files(urls, tags, operation):
-    """Calls the bulk-tag API endpoint with the corrected payload."""
-    api_url = f"{API_BASE_URL}/bulk-tag"
-    
-    url_list = [url.strip() for url in urls.split('\n') if url.strip()]
-    
-    # --- THIS IS THE CORRECTED LOGIC ---
-    # The backend expects a format like ["label,count"].
-    # We will append ",1" to each tag for the "Add" operation.
-    # For the "Remove" operation, the count is ignored by the backend, but the format is still required.
-    tag_list = [f"{tag.strip()},1" for tag in tags.split(',') if tag.strip()]
-    # --- END OF CORRECTION ---
+def bulk_tag_manager():
+    st.markdown("""
+    - 🔗 Enter one or more S3 thumbnail URLs (comma-separated)
+    - ➕ Add: requires `Tag,Count` (e.g., Crow,1)
+    - ➖ Remove: just `Tag` (count ignored)
+    """)
 
-    if not url_list or not tag_list:
-        st.warning("Please provide at least one URL and one Tag.")
-        return
+    # Inputs
+    url_input = st.text_area(
+        "S3 Thumbnail URLs (comma-separated)",
+        placeholder="s3://team99-uploaded-files/thumbnails/pigeon_2.jpg"
+    )
 
-    # For the 'Remove' operation, the backend logic simply deletes the tag key.
-    # For the 'Add' operation, it increments the count.
-    # The operation value 1 for 'Add' and 0 for 'Remove' from the original code is kept.
-    payload = {
-        "url": url_list,
-        "operation": 1 if operation == "Add" else 0, # 1 for add, 0 for remove
-        "tags": tag_list
-    }
+    operation = st.radio("Operation", options=["Add", "Remove"], horizontal=True)
+    op_code = 1 if operation == "Add" else 0
 
-    with st.spinner("Applying tags..."):
+    tags_input = st.text_area(
+        "Tags",
+        placeholder="e.g., Crow,1\nSparrow,2" if op_code == 1 else "e.g., Crow\nSparrow"
+    )
+
+    if st.button("🛠️ Submit Bulk Tag Update", use_container_width=True):
+        # Parse inputs
+        urls = [u.strip() for u in url_input.split(",") if u.strip()]
+        tags = [t.strip() for t in tags_input.split("\n") if t.strip()]
+
+        if not urls or not tags:
+            st.warning("Please provide both URLs and tags.")
+            return
+
+        payload = {
+            "url": urls,
+            "operation": op_code,
+            "tags": tags
+        }
+
+        st.write("📤 **Payload Preview**")
+        st.json(payload)
+
         try:
-            # You would typically pass the auth token in headers here
-            # headers = {'Authorization': f'Bearer {st.session_state.id_token}'}
-            # response = requests.post(api_url, json=payload, headers=headers)
-            response = requests.post(api_url, json=payload)
+            response = requests.post(
+                f"{API_BASE_URL}/bulk-tag",
+                json=payload
+            )
             response.raise_for_status()
-            st.success("Tags updated successfully!")
-            st.json(response.json())
-        except requests.exceptions.RequestException as e:
-            st.error(f"API Error: {e.response.text}")
+            result = response.json()
+            st.success("✅ Bulk tag operation completed successfully.")
+            st.json(result)
         except Exception as e:
-            st.error(f"An error occurred: {e}")
+            st.error(f"API error: {e}")
+            st.error(getattr(e.response, "text", None))
 
-# --- Main Page UI ---
 st.header("🏷️ Bulk Tag Management")
 st.info("Manually add or remove tags for multiple files at once.")
-
-urls = st.text_area(
-    "File S3 URLs (one per line)",
-    placeholder="s3://team99-uploaded-files/thumbnails/pigeon_2.jpg\ns3://team99-uploaded-files/thumbnails/sparrow_1.jpg"
-)
-
-tags = st.text_input(
-    "Tags (comma-separated)",
-    placeholder="Crow, Sparrow"
-)
-
-operation = st.radio("Operation", ("Add", "Remove"))
-
-if st.button("Apply Changes", type="primary"):
-    bulk_tag_files(urls, tags, operation)
+bulk_tag_manager()

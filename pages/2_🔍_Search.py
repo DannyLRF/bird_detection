@@ -119,11 +119,11 @@ def show_search_results():
         cols = st.columns(1)
         original_url = results[0]
         try:
-         st.image(original_url, caption="Original Image", use_column_width=True)
+         st.image(original_url, caption="Original Image", use_container_width=True)
         except Exception as e:
             st.error(f"Display error: {e}")
             st.json(item)
-            
+
     else:
         # Display in 3-column layout
         cols = st.columns(3)
