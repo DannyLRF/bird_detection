@@ -56,7 +56,7 @@ with col4:
         st.switch_page("pages/4_🏷️_Manage_Tags.py")
 
 # Third row of features
-col5 = st.columns(1)
+col5, = st.columns(1)
 with col5:
     st.info("**🔔 Subscribe to Tags**\n\nGet email notifications for specific bird uploads.")
     if st.button("Go to Subscribe", use_container_width=True):
