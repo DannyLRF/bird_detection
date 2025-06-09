@@ -1,17 +1,13 @@
 import streamlit as st
 import requests
 import json
+from auth import authenticate_user, add_logout_button
 
-st.set_page_config(page_title="🚫 Delete")
-
-st.title("🚫 Delete")
-
-st.markdown(
-    """
-    Use this page to delete one or more uploaded files from the system.
-    Paste the S3 or HTTP URLs of the files you want to delete, then click **Submit for Deletion**.
-    """
-)
+# --- Authentication Check ---
+# This single line handles the authentication check and displays the login page if needed.
+authenticate_user()
+# Add the logout button to the sidebar to maintain a consistent UI.
+add_logout_button()
 
 # Session state for storing URLs
 if "url_fields" not in st.session_state:
@@ -19,6 +15,7 @@ if "url_fields" not in st.session_state:
 if "delete_response" not in st.session_state:
     st.session_state.delete_response = None
 
+# Page functionality
 # Function to dynamically add more URL inputs
 def add_url_field():
     st.session_state.url_fields.append("")
@@ -47,6 +44,15 @@ def submit_urls():
     except Exception as e:
         st.error(f"Error sending request: {str(e)}")
 
+# Page Layout
+st.header("🚫 Delete")
+
+st.markdown(
+    """
+    Use this page to delete one or more uploaded files from the system.
+    Paste the S3 or HTTP URLs of the files you want to delete, then click **Submit for Deletion**.
+    """
+)
 
 st.subheader("File URLs to Delete")
 
