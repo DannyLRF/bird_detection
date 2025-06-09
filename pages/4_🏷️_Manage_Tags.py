@@ -1,4 +1,4 @@
-# pages/4_🏷️_Manage_Tags.py (New Version)
+# pages/4_🏷️_Manage_Tags.py (Corrected Version)
 import streamlit as st
 import requests
 from auth import authenticate_user, add_logout_button # Import the new functions
@@ -10,16 +10,25 @@ add_logout_button()
 
 # --- Page-specific Functions ---
 def bulk_tag_files(urls, tags, operation):
-    """Calls the bulk-tag API endpoint."""
+    """Calls the bulk-tag API endpoint with the corrected payload."""
     api_url = f"{API_BASE_URL}/bulk-tag"
     
     url_list = [url.strip() for url in urls.split('\n') if url.strip()]
-    tag_list = [tag.strip() for tag in tags.split(',') if tag.strip()]
     
+    # --- THIS IS THE CORRECTED LOGIC ---
+    # The backend expects a format like ["label,count"].
+    # We will append ",1" to each tag for the "Add" operation.
+    # For the "Remove" operation, the count is ignored by the backend, but the format is still required.
+    tag_list = [f"{tag.strip()},1" for tag in tags.split(',') if tag.strip()]
+    # --- END OF CORRECTION ---
+
     if not url_list or not tag_list:
         st.warning("Please provide at least one URL and one Tag.")
         return
 
+    # For the 'Remove' operation, the backend logic simply deletes the tag key.
+    # For the 'Add' operation, it increments the count.
+    # The operation value 1 for 'Add' and 0 for 'Remove' from the original code is kept.
     payload = {
         "url": url_list,
         "operation": 1 if operation == "Add" else 0, # 1 for add, 0 for remove
