@@ -26,12 +26,16 @@ def lambda_handler(event, context):
 
     if ext in [".jpg", ".jpeg", ".png"]:
         logger.info("Processing image file...")
+
         thumbnail_key = key
         logger.info(f"Thumbnail key: {thumbnail_key}")
-        filename = os.path.basename(thumbnail_key)  # "bird.jpg"
+
+        filename = os.path.basename(thumbnail_key)
         logger.info(f"Filename: {filename}")
-        original_key = "uploads/" + filename  # "uploads/bird.jpg"
+
+        original_key = "uploads/" + filename
         logger.info(f"Original key: {original_key}")
+        
         annotated_key = "annotated/images/" + filename
         logger.info(f"Annotated key: {annotated_key}")
 
