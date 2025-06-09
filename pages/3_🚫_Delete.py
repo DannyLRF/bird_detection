@@ -33,9 +33,9 @@ def submit_urls():
     # Prepare the request payload
     payload = {"urls": valid_urls}
 
+    # Attempting deletion
     try:
-        # Replace this with your actual DELETE endpoint
-        api_url = "https://your-api-gateway-url.com/delete"
+        api_url = "https://d2u7y2aieb.execute-api.ap-southeast-2.amazonaws.com/dev/api/upload"
 
         # Send DELETE request
         response = requests.delete(api_url, data=json.dumps(payload))
