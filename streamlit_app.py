@@ -46,9 +46,9 @@ with col2:
 col3, col4 = st.columns(2)
 
 with col3:
-    st.info("**📊 View Statistics**\n\nAnalyze upload history and species detection results.")
-    if st.button("View Statistics", use_container_width=True):
-        st.switch_page("pages/3_📊_Statistics.py")
+    st.info("**🚫_Delete Files**\n\nDelete files by URLs from the database.")
+    if st.button("Delete Files", use_container_width=True):
+        st.switch_page("pages/3_🚫_Delete.py")
 
 with col4:
     st.info("**🏷️ Manage Tags**\n\nBulk add or remove tags from your uploaded files.")
