@@ -9,11 +9,11 @@ BUCKET_NAME = os.environ['BUCKET_NAME']
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(os.environ['TABLE_NAME'])
 
-audio_extensions = ["wav", "x-wav", "mpeg", "mp3"]  # include mp3 for detection
+audio_extensions = ["wav", "x-wav", "mp3"]
 
 def delete_file(event, context):
     body = json.loads(event.get("body", "{}"))
-    s3_urls = body.get("s3_urls", [])
+    s3_urls = body.get("urls", [])
 
     deleted = []
     errors = []
@@ -22,13 +22,14 @@ def delete_file(event, context):
         try:
             file_name = extract_file_name(url)
             file_base, file_ext = file_name.rsplit(".", 1)
+            print(file_name, file_base, file_ext)
 
             is_audio = file_ext.lower() in audio_extensions
             is_video = file_ext.lower() == "mp4"
 
             if is_audio:
                 raw_key = f"audio/{file_name}"
-                annotated_key = f"annotated/audio/{file_base}.json"
+                annotated_key = f"annotated/audio/{file_base}_predictions.json"
 
                 s3.delete_object(Bucket=BUCKET_NAME, Key=raw_key)
                 s3.delete_object(Bucket=BUCKET_NAME, Key=annotated_key)

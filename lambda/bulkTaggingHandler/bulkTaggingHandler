@@ -1,0 +1,86 @@
+import json
+import boto3
+from decimal import Decimal
+
+dynamodb = boto3.resource("dynamodb")
+table = dynamodb.Table("BirdTagsData")
+
+def lambda_handler(event, context):
+    try:
+        body = event.get("body")
+        if isinstance(body, str):
+            body = json.loads(body)
+
+        urls = body.get("url", [])
+        operation = body.get("operation")
+        print("operation: ", operation)
+        tags = body.get("tags", [])
+
+        if not urls or operation not in [0, 1] or not tags:
+            return respond(400, {"error": "Invalid input"})
+
+        parsed_tags = []
+        for t in tags:
+            try:
+                label, count = t.split(",")
+                print("label: ", label)
+                print("count: ", count)
+                parsed_tags.append((label.strip(), int(count)))
+            except:
+                continue
+
+        for url in urls:
+            # Scan by thumbnail_s3_url
+            response = table.scan(
+                FilterExpression="thumbnail_s3_url = :val",
+                ExpressionAttributeValues={":val": url}
+            )
+
+            items = response.get("Items", [])
+            if not items:
+                print("No items found for url: ", url)
+                continue
+
+            print(len(items), " items found for url: ", url)
+
+            item = items[0]
+            file_id = item["file_id"]
+            birds = item.get("detected_birds", [])
+            bird_map = {b["label"]: int(b["count"]) for b in birds}
+
+            if operation == 1:  # Add
+                for label, count in parsed_tags:
+                    bird_map[label] = bird_map.get(label, 0) + count
+            else:  # Remove
+                for label in [t.strip() for t in tags]:
+                    if label in bird_map:
+                        del bird_map[label]
+
+            updated_birds = [
+                {
+                    "label": label,
+                    "count": count
+                } for label, count in bird_map.items()
+            ]
+
+            table.update_item(
+                Key={"file_id": file_id},
+                UpdateExpression="SET detected_birds = :val",
+                ExpressionAttributeValues={":val": updated_birds}
+            )
+
+        return respond(200, {"message": "Tag updates applied successfully"})
+
+    except Exception as e:
+        print("Error: ", e)
+        return respond(500, {"error": str(e)})
+
+def respond(status_code, body):
+    return {
+        "statusCode": status_code,
+        "body": json.dumps(body),
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+        }
+    }

@@ -7,6 +7,14 @@ dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(TABLE_NAME)
 s3 = boto3.client("s3")
 
+
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return int(obj) if obj % 1 == 0 else float(obj)
+        return super(DecimalEncoder, self).default(obj)
+
+
 def parse_get_filters(params):
     filters = {}
     index = 1
@@ -28,6 +36,7 @@ def parse_get_filters(params):
         index += 1
 
     return [filters] if filters else []
+
 
 def parse_post_filters(body_raw):
     try:
@@ -59,6 +68,7 @@ def parse_post_filters(body_raw):
     except Exception:
         return [], []
 
+
 def lambda_handler(event, context):
     try:
         method = event.get("httpMethod", "").upper()
@@ -84,7 +94,7 @@ def lambda_handler(event, context):
 
         # === Scan DynamoDB ===
         response = table.scan()
-        matching_urls = set()
+        matching_results = []
 
         for item in response.get("Items", []):
             birds = item.get("detected_birds", [])
@@ -98,9 +108,14 @@ def lambda_handler(event, context):
             # === Dict filter check ===
             matched = False
             for filters in filters_list:
-                if all(bird_counts.get(tag, 0) >= filters[tag] for tag in filters):
-                    matched = True
-                    break
+                if method == "GET":
+                    if all(bird_counts.get(tag, -1) == filters[tag] for tag in filters):
+                        matched = True
+                        break
+                else:  # POST
+                    if all(bird_counts.get(tag, 0) >= filters[tag] for tag in filters):
+                        matched = True
+                        break
 
             # === Set filter check ===
             if not matched:
@@ -110,22 +125,35 @@ def lambda_handler(event, context):
                         break
 
             if matched:
-                annotated_uri = item.get("annotated_s3_url")
-                if annotated_uri and annotated_uri.startswith("s3://"):
-                    bucket, key = annotated_uri.replace("s3://", "").split("/", 1)
-                    url = s3.generate_presigned_url(
-                        "get_object",
-                        Params={"Bucket": bucket, "Key": key},
-                        ExpiresIn=300
-                    )
-                    matching_urls.add(url)
+                result_item = dict(item)  # Clone the item to avoid modifying original
+
+                # Generate presigned URLs for all three S3 fields
+                for field in ["annotated_s3_url", "original_s3_url", "thumbnail_s3_url"]:
+                    uri = item.get(field)
+                    url_field = field.replace("_s3_url", "_url")
+                    if uri and uri.startswith("s3://"):
+                        try:
+                            bucket, key = uri.replace("s3://", "").split("/", 1)
+                            presigned = s3.generate_presigned_url(
+                                "get_object",
+                                Params={"Bucket": bucket, "Key": key},
+                                ExpiresIn=300
+                            )
+                            result_item[url_field] = presigned
+                        except Exception as e:
+                            print(f"Failed to generate URL for {field}: {e}")
+                            result_item[url_field] = None
+                    else:
+                        result_item[url_field] = None
+
+                matching_results.append(result_item)
 
         return {
             "statusCode": 200,
             "body": json.dumps({
-                "matched_files": list(matching_urls),
-                "count": len(matching_urls)
-            })
+                "matched_files": matching_results,
+                "count": len(matching_results)
+            }, cls=DecimalEncoder)
         }
 
     except Exception as e:
