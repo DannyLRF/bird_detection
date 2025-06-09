@@ -106,70 +106,67 @@ def search_by_uploaded_file():
 
 # --- Result Renderer ---
 def show_search_results():
-    """
-    Display search results, handling different URL formats and potential errors.
-    """
-    search_results = st.session_state.get('search_results', [])
-    if not search_results:
+    results = st.session_state.get("search_results", [])
+    if not results:
         st.info("Your search results will appear here.")
         return
 
     st.subheader("Search Results")
-    st.write(f"**Total Results:** {len(search_results)}")
-    
-    first_item = search_results[0]
-    url_key = None
-    if isinstance(first_item, dict):
-        possible_keys = ['original_url', 'annotated_url', 'thumbnail_url', 'url', 'presigned_url', 'link']
-        for key in possible_keys:
-            if key in first_item and isinstance(first_item[key], str):
-                url_key = key
-                break
-        if not url_key:
-            st.error("Could not automatically determine the URL key in the search result dictionary.")
-            st.json(first_item)
-            return
-    
-    cols = st.columns(3)
-    
-    for i, result_item in enumerate(search_results):
-        with cols[i % 3]:
-            st.write(f"**File {i+1}:**")
+    st.write(f"**Total Results:** {len(results)}")
+
+    # When showing original image for thumbnail
+    if (type(results[0]) is str):
+        cols = st.columns(1)
+        original_url = results[0]
+        try:
+         st.image(original_url, caption="Original Image", use_column_width=True)
+        except Exception as e:
+            st.error(f"Display error: {e}")
+            st.json(item)
             
-            url = None
-            if isinstance(result_item, dict) and url_key:
-                url = result_item.get(url_key)
-            elif isinstance(result_item, str):
-                url = result_item
-            else:
-                st.warning(f"Skipping item {i+1} due to unknown format.")
-                st.write(result_item)
-                continue
+    else:
+        # Display in 3-column layout
+        cols = st.columns(3)
+        for i, item in enumerate(results):
+            with cols[i % 3]:
+                # Handle expected keys
+                thumbnail_s3_url = item.get("thumbnail_s3_url") or None
+                original_url = item.get("original_url") or None
+                thumbnail_url = item.get("thumbnail_url") or None
 
-            if not url:
-                st.warning(f"No URL found for item {i+1}.")
-                continue
+                if not original_url and not thumbnail_url:
+                    st.warning("No valid URLs found for this item.")
+                    st.json(item)
+                    continue
 
-            st.code(url, language=None)
-            
-            # FIX 3: Check if the URL is an s3:// URI before trying to display it.
-            if url.startswith('s3://'):
-                st.error("Cannot display file. Received an S3 URI instead of an accessible HTTPS URL from the API.")
-                continue
+                # Display thumbnail_s3_url above preview
+                if thumbnail_s3_url:
+                    st.code(thumbnail_s3_url)
 
-            try:
-                if ".mp4" in url.lower() or ".mov" in url.lower():
-                    st.video(url)
-                elif ".jpg" in url.lower() or ".jpeg" in url.lower() or ".png" in url.lower():
-                    # FIX 2: Use use_container_width instead of use_column_width.
-                    st.image(url, use_container_width=True)
-                elif ".wav" in url.lower() or ".mp3" in url.lower():
-                    st.audio(url)
-                else:
-                    # FIX 1: Use st.markdown to render the link correctly.
-                    st.markdown(f"[Link to file]({url})")
-            except Exception as e:
-                st.error(f"Could not display file: {e}")
+                # Determine media type by URL (if known)
+                preview_url = thumbnail_url or original_url
+                if not preview_url:
+                    st.warning("No previewable URL found.")
+                    st.json(item)
+                    continue
+
+                try:
+                    # If image with thumbnail and original_url
+                    if thumbnail_url and original_url:
+                        # Make thumbnail clickable
+                        st.markdown(
+                            f"[![thumbnail]({thumbnail_url})]({original_url})",
+                            unsafe_allow_html=True
+                        )
+                    elif ".mp4" in preview_url.lower() or ".mov" in preview_url.lower():
+                        st.video(preview_url)
+                    elif "mp3" in preview_url.lower() or "wav" in preview_url.lower():
+                        st.audio(preview_url)
+                    else:
+                        st.code(preview_url)
+                except Exception as e:
+                    st.error(f"Display error: {e}")
+                    st.json(item)
 
 # --- UI ---
 st.header("🔍 Search Files")
