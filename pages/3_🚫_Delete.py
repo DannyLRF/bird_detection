@@ -9,7 +9,7 @@ st.title("🚫 Delete")
 st.markdown(
     """
     Use this page to delete one or more uploaded files from the system.
-    Paste the S3 URLs of the files you want to delete, then click **Submit for Deletion**.
+    Paste the S3 or HTTP URLs of the files you want to delete, then click **Submit for Deletion**.
     """
 )
 
