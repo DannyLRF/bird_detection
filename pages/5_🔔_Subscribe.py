@@ -10,7 +10,8 @@ add_logout_button()
 
 st.header("🔔 Subscribe")
 
-st.markdown("Receive email alerts when new images containing your desired tags are uploaded to our database.")
+st.markdown("Receive email alerts when new images containing your desired tags are uploaded to our database.\n" \
+    "EXISTING SUBSCRIBERS: Adding new tags overwrites old ones. Include every bird species you want to hear about in this list!")
 
 # Input email
 email = st.text_input("Your email address", placeholder="you@example.com")
