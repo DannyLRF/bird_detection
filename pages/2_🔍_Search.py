@@ -67,7 +67,7 @@ def show_search_results():
     first_item = search_results[0]
     url_key = None
     if isinstance(first_item, dict):
-        possible_keys = ['presigned_url', 'url', 'annotated_s3_url', 'link', 'matched_files']
+        possible_keys = ['annotated_url', 'original_url', 'thumbnail_url', 'url', 'presigned_url', 'link']
         for key in possible_keys:
             if key in first_item and isinstance(first_item[key], str):
                 url_key = key
