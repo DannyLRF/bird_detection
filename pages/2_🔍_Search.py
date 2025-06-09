@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import json
+import base64
 from auth import authenticate_user, add_logout_button
 from config import API_BASE_URL
 
@@ -58,6 +59,47 @@ def search_by_species():
                 results = response.json()
                 st.session_state.search_results = results.get("matched_files", [])
                 st.success(f"Found {len(st.session_state.search_results)} result(s).")
+            except Exception as e:
+                st.error(f"API error: {e}")
+                st.error(getattr(e.response, "text", None))
+
+def search_by_uploaded_file():
+    uploaded_file = st.file_uploader(
+        "Upload a file (image, audio, or video)",
+        type=["jpg", "jpeg", "png", "mp3", "wav", "mp4", "mov"],
+        key="similarity_file"
+    )
+
+    file_type = st.selectbox(
+        "Select file type",
+        options=["image", "audio", "video"],
+        help="This tells the backend how to process the uploaded file"
+    )
+
+    if st.button("🔍 Find Similar Files"):
+        if not uploaded_file:
+            st.warning("Please upload a file first.")
+            return
+
+        # Read and encode file
+        file_bytes = uploaded_file.read()
+        file_b64 = base64.b64encode(file_bytes).decode("utf-8")
+        payload = {
+            "file_type": file_type,
+            "file_base64": file_b64
+        }
+
+        st.write("📤 **Request Payload Preview**")
+        st.code(f'{{"file_type": "{file_type}", "file_base64": "<{len(file_b64)} characters>"}}', language="json")
+
+        st.session_state.search_results = []
+        with st.spinner("Processing uploaded file and searching for similar matches..."):
+            try:
+                response = requests.post(f"{API_BASE_URL}/files", json=payload)
+                response.raise_for_status()
+                results = response.json()
+                st.session_state.search_results = results.get("matched_files", [])
+                st.success(f"Found {len(st.session_state.search_results)} similar file(s).")
             except Exception as e:
                 st.error(f"API error: {e}")
                 st.error(getattr(e.response, "text", None))
@@ -271,6 +313,9 @@ with st.expander("🖼️ Lookup Full Image from Thumbnail URL"):
                     st.error(f"API Error: {e}")
                     st.error(getattr(e.response, "text", None))
 
+# Search by uploaded file
+with st.expander("🧪 Search by Uploaded File (No Storage)"):
+    search_by_uploaded_file()
 
 # Clear Results
 if st.session_state.get("search_results"):
